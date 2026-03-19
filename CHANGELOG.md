@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Error wrapping uses `make_error_wrapper` from `octorules.provider.utils`
+  instead of a hand-rolled decorator.
+- Requires `octorules>=0.17.0`.
+
+### Removed
+- Page Shield stub methods removed from `CloudArmorProvider`. The `BaseProvider`
+  protocol no longer requires them.
+
 ## [0.1.0] - 2026-03-17
 
 ### Added

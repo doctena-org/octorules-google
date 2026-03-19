@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "octorules-google"
-version = "0.1.0"
+version = "0.2.0"
 description = "Google Cloud Armor provider for octorules"
 license = "Apache-2.0"
 requires-python = ">=3.10"
@@ -26,7 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "octorules>=0.16.0",
+    "octorules>=0.17.0",
     "google-cloud-compute>=1.10",
     "google-auth>=2.0",
     "cel-python>=0.1",

@@ -3,12 +3,11 @@
 Maps octorules concepts to Cloud Armor security policies:
   - Zones → Security policies (resolve_zone_id looks up by name)
   - Phases → Rule types within a policy (custom / rate / preconfigured)
-  - Custom rulesets / Lists / Page Shield → Not supported
+  - Custom rulesets / Lists → Not supported
 """
 
 from __future__ import annotations
 
-import functools
 import logging
 import os
 
@@ -17,11 +16,8 @@ from google.auth.exceptions import DefaultCredentialsError
 from google.cloud import compute_v1
 from octorules.config import ConfigError
 from octorules.provider.base import PhaseRulesResult, Scope
-from octorules.provider.exceptions import (
-    ProviderAuthError,
-    ProviderConnectionError,
-    ProviderError,
-)
+from octorules.provider.exceptions import ProviderError
+from octorules.provider.utils import make_error_wrapper
 
 log = logging.getLogger(__name__)
 
@@ -39,23 +35,11 @@ _GCLOUD_PHASE_IDS = frozenset(
 _DEFAULT_RULE_PRIORITY = 2147483647
 
 
-def _wrap_provider_errors(fn):
-    """Wrap Google Cloud exceptions as provider-agnostic base exceptions."""
-
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        try:
-            return fn(*args, **kwargs)
-        except (Unauthorized, Forbidden) as e:
-            raise ProviderAuthError(str(e)) from e
-        except DefaultCredentialsError as e:
-            raise ProviderAuthError(str(e)) from e
-        except (ConnectionError, OSError) as e:
-            raise ProviderConnectionError(str(e)) from e
-        except GoogleAPIError as e:
-            raise ProviderError(str(e)) from e
-
-    return wrapper
+_wrap_provider_errors = make_error_wrapper(
+    auth_errors=(Unauthorized, Forbidden, DefaultCredentialsError),
+    connection_errors=(ConnectionError, OSError),
+    generic_errors=(GoogleAPIError,),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +119,7 @@ class CloudArmorProvider:
     Maps octorules concepts to Cloud Armor:
       - Zones → Security policies (resolve_zone_id looks up by name)
       - Phases → Rule types (custom / rate-limit / preconfigured WAF)
-      - Custom rulesets, Lists, Page Shield → Not supported
+      - Custom rulesets, Lists → Not supported
 
     Authentication uses Google Application Default Credentials (ADC).
     The ``token`` parameter is accepted for BaseProvider compatibility
@@ -380,44 +364,3 @@ class CloudArmorProvider:
         self, scope: Scope, *, list_names: list[str] | None = None
     ) -> dict[str, dict]:
         return {}
-
-    # -- Page Shield (not supported by Cloud Armor) --
-
-    @_wrap_provider_errors
-    def list_page_shield_policies(self, scope: Scope) -> list[dict]:
-        return []
-
-    @_wrap_provider_errors
-    def create_page_shield_policy(
-        self,
-        scope: Scope,
-        *,
-        description: str,
-        action: str,
-        expression: str,
-        enabled: bool,
-        value: str,
-    ) -> dict:
-        raise ProviderError("Page Shield policies are not supported by Cloud Armor")
-
-    @_wrap_provider_errors
-    def update_page_shield_policy(
-        self,
-        scope: Scope,
-        policy_id: str,
-        *,
-        description: str,
-        action: str,
-        expression: str,
-        enabled: bool,
-        value: str,
-    ) -> dict:
-        raise ProviderError("Page Shield policies are not supported by Cloud Armor")
-
-    @_wrap_provider_errors
-    def delete_page_shield_policy(self, scope: Scope, policy_id: str) -> None:
-        raise ProviderError("Page Shield policies are not supported by Cloud Armor")
-
-    @_wrap_provider_errors
-    def get_all_page_shield_policies(self, scope: Scope) -> list[dict]:
-        return []

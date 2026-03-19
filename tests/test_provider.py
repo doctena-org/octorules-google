@@ -283,35 +283,6 @@ class TestLists:
         assert provider.get_all_lists(_zs()) == {}
 
 
-class TestPageShield:
-    def test_list_returns_empty(self, mock_armor_client):
-        provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        assert provider.list_page_shield_policies(_zs()) == []
-
-    def test_get_all_returns_empty(self, mock_armor_client):
-        provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        assert provider.get_all_page_shield_policies(_zs()) == []
-
-    def test_create_raises(self, mock_armor_client):
-        provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
-            provider.create_page_shield_policy(
-                _zs(), description="", action="", expression="", enabled=True, value=""
-            )
-
-    def test_update_raises(self, mock_armor_client):
-        provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
-            provider.update_page_shield_policy(
-                _zs(), "p-1", description="", action="", expression="", enabled=True, value=""
-            )
-
-    def test_delete_raises(self, mock_armor_client):
-        provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
-            provider.delete_page_shield_policy(_zs(), "p-1")
-
-
 class TestExceptionWrapping:
     def test_forbidden_becomes_provider_auth_error(self, mock_armor_client):
         mock_armor_client.get.side_effect = Forbidden("forbidden")
@@ -414,7 +385,6 @@ class TestSupports:
     def test_does_not_support_optional_crud_features(self):
         assert "custom_rulesets" not in CloudArmorProvider.SUPPORTS
         assert "lists" not in CloudArmorProvider.SUPPORTS
-        assert "page_shield" not in CloudArmorProvider.SUPPORTS
 
     def test_supports_zone_discovery(self):
         assert "zone_discovery" in CloudArmorProvider.SUPPORTS
@@ -423,7 +393,6 @@ class TestSupports:
         from octorules.provider.base import (
             SUPPORTS_CUSTOM_RULESETS,
             SUPPORTS_LISTS,
-            SUPPORTS_PAGE_SHIELD,
             SUPPORTS_ZONE_DISCOVERY,
             provider_supports,
         )
@@ -431,7 +400,6 @@ class TestSupports:
         prov = CloudArmorProvider.__new__(CloudArmorProvider)
         assert not provider_supports(prov, SUPPORTS_CUSTOM_RULESETS)
         assert not provider_supports(prov, SUPPORTS_LISTS)
-        assert not provider_supports(prov, SUPPORTS_PAGE_SHIELD)
         assert provider_supports(prov, SUPPORTS_ZONE_DISCOVERY)
 
 
