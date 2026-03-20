@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-20
+
 ### Added
 - **GA600** (INFO): Rule is in preview mode (`preview: true`).
 - **GA601** (WARNING): Expression is always true — catch-all rule.
 - **GA602** (WARNING): Expression is always false — dead rule.
 - Lint rule reference: `docs/lint.md`.
+
+## [0.2.0] - 2026-03-19
 
 ### Changed
 - Error wrapping uses `make_error_wrapper` from `octorules.provider.utils`
