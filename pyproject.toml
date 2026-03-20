@@ -27,8 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "octorules>=0.17.0",
-    "google-cloud-compute>=1.10",
-    "google-auth>=2.0",
+    "google-cloud-compute>=1.10,<2.0",
     "cel-python>=0.1",
 ]
 
