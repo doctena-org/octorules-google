@@ -86,7 +86,7 @@ class TestGoogleLint:
                 {
                     "ref": "100",
                     "action": "allow",
-                    "match": {"expr": {"expression": "true"}},
+                    "match": {"expr": {"expression": "origin.region_code == 'US'"}},
                 },
             ],
         }

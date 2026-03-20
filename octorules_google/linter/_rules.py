@@ -129,5 +129,20 @@ GA500 = RuleMeta(
 )
 GA503 = RuleMeta("GA503", "match", "Private/reserved IP range in src_ip_ranges", Severity.WARNING)
 
+# Category GA6xx — Best-practice / operational checks
+GA600 = RuleMeta("GA600", "best_practice", "Rule is in preview mode (preview: true)", Severity.INFO)
+GA601 = RuleMeta(
+    "GA601",
+    "best_practice",
+    "Expression is always true — this is a catch-all rule",
+    Severity.WARNING,
+)
+GA602 = RuleMeta(
+    "GA602",
+    "best_practice",
+    "Expression is always false — rule never matches",
+    Severity.WARNING,
+)
+
 # Collect all rule metas for registration
 GA_RULE_METAS: list[RuleMeta] = [obj for obj in globals().values() if isinstance(obj, RuleMeta)]

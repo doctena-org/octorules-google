@@ -30,7 +30,8 @@ def _ids(results: list[LintResult]) -> list[str]:
 
 class TestValidRules:
     def test_no_errors(self):
-        assert validate_rules([_rule()]) == []
+        r = _rule(match={"expr": {"expression": "origin.region_code == 'US'"}})
+        assert validate_rules([r]) == []
 
     def test_empty_list(self):
         assert validate_rules([]) == []
@@ -1272,6 +1273,172 @@ class TestCrossRuleAnalysis:
             match={"expr": {"expression": "evaluatePreconfiguredExpr('xss-v33-stable')"}},
         )
         assert "GA108" in _ids(validate_rules([r1, r2]))
+
+
+# ---------------------------------------------------------------------------
+# GA600  Preview mode
+# ---------------------------------------------------------------------------
+
+
+class TestPreview:
+    def test_ga600_preview_true(self):
+        r = _rule(preview=True)
+        assert "GA600" in _ids(validate_rules([r]))
+
+    def test_ga600_preview_false(self):
+        r = _rule(preview=False)
+        assert "GA600" not in _ids(validate_rules([r]))
+
+    def test_ga600_no_preview_key(self):
+        assert "GA600" not in _ids(validate_rules([_rule()]))
+
+    def test_ga600_preview_none(self):
+        r = _rule(preview=None)
+        assert "GA600" not in _ids(validate_rules([r]))
+
+    def test_ga600_preview_truthy_string_not_flagged(self):
+        """Only boolean True triggers GA600, not truthy strings."""
+        r = _rule(preview="yes")
+        assert "GA600" not in _ids(validate_rules([r]))
+
+    def test_ga600_severity_is_info(self):
+        from octorules.linter.engine import Severity
+
+        r = _rule(preview=True)
+        results = validate_rules([r])
+        ga600 = [x for x in results if x.rule_id == "GA600"]
+        assert ga600[0].severity == Severity.INFO
+
+    def test_ga600_field_set(self):
+        r = _rule(preview=True)
+        results = validate_rules([r])
+        ga600 = [x for x in results if x.rule_id == "GA600"]
+        assert ga600[0].field == "preview"
+
+
+# ---------------------------------------------------------------------------
+# GA601  Always-true expression
+# ---------------------------------------------------------------------------
+
+
+class TestAlwaysTrue:
+    def test_ga601_expression_true(self):
+        match = {"expr": {"expression": "true"}}
+        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga601_expression_true_uppercase(self):
+        match = {"expr": {"expression": "TRUE"}}
+        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga601_expression_true_whitespace(self):
+        match = {"expr": {"expression": "  true  "}}
+        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga601_expression_true_parenthesized(self):
+        match = {"expr": {"expression": "((true))"}}
+        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga601_normal_expression_not_flagged(self):
+        match = {"expr": {"expression": "origin.region_code == 'US'"}}
+        assert "GA601" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga601_src_ip_ranges_wildcard(self):
+        match = {
+            "versioned_expr": "SRC_IPS_V1",
+            "config": {"src_ip_ranges": ["*"]},
+        }
+        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga601_src_ip_ranges_non_wildcard(self):
+        match = {
+            "versioned_expr": "SRC_IPS_V1",
+            "config": {"src_ip_ranges": ["8.8.8.0/24"]},
+        }
+        assert "GA601" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga601_src_ip_ranges_wildcard_wrong_versioned_expr(self):
+        """Only SRC_IPS_V1 with ['*'] triggers GA601."""
+        match = {
+            "versioned_expr": "BOGUS",
+            "config": {"src_ip_ranges": ["*"]},
+        }
+        assert "GA601" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga601_severity_is_warning(self):
+        from octorules.linter.engine import Severity
+
+        match = {"expr": {"expression": "true"}}
+        results = validate_rules([_rule(match=match)])
+        ga601 = [x for x in results if x.rule_id == "GA601"]
+        assert ga601[0].severity == Severity.WARNING
+
+    def test_ga601_field_set_for_cel(self):
+        match = {"expr": {"expression": "true"}}
+        results = validate_rules([_rule(match=match)])
+        ga601 = [x for x in results if x.rule_id == "GA601"]
+        assert ga601[0].field == "match.expr.expression"
+
+    def test_ga601_field_set_for_ip_wildcard(self):
+        match = {
+            "versioned_expr": "SRC_IPS_V1",
+            "config": {"src_ip_ranges": ["*"]},
+        }
+        results = validate_rules([_rule(match=match)])
+        ga601 = [x for x in results if x.rule_id == "GA601"]
+        assert ga601[0].field == "match.config.src_ip_ranges"
+
+
+# ---------------------------------------------------------------------------
+# GA602  Always-false expression
+# ---------------------------------------------------------------------------
+
+
+class TestAlwaysFalse:
+    def test_ga602_expression_false(self):
+        match = {"expr": {"expression": "false"}}
+        assert "GA602" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga602_expression_false_uppercase(self):
+        match = {"expr": {"expression": "FALSE"}}
+        assert "GA602" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga602_expression_false_whitespace(self):
+        match = {"expr": {"expression": "  false  "}}
+        assert "GA602" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga602_expression_false_parenthesized(self):
+        match = {"expr": {"expression": "((false))"}}
+        assert "GA602" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga602_normal_expression_not_flagged(self):
+        match = {"expr": {"expression": "origin.region_code == 'US'"}}
+        assert "GA602" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga602_true_not_flagged(self):
+        match = {"expr": {"expression": "true"}}
+        assert "GA602" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga602_severity_is_warning(self):
+        from octorules.linter.engine import Severity
+
+        match = {"expr": {"expression": "false"}}
+        results = validate_rules([_rule(match=match)])
+        ga602 = [x for x in results if x.rule_id == "GA602"]
+        assert ga602[0].severity == Severity.WARNING
+
+    def test_ga602_field_set(self):
+        match = {"expr": {"expression": "false"}}
+        results = validate_rules([_rule(match=match)])
+        ga602 = [x for x in results if x.rule_id == "GA602"]
+        assert ga602[0].field == "match.expr.expression"
+
+    def test_ga602_empty_expression_not_flagged(self):
+        """Empty expression is GA314, not GA602."""
+        match = {"expr": {"expression": ""}}
+        assert "GA602" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga602_match_not_dict_no_crash(self):
+        assert "GA602" not in _ids(validate_rules([_rule(match="invalid")]))
 
 
 # ---------------------------------------------------------------------------

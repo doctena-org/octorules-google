@@ -6,7 +6,7 @@ import ipaddress
 import re
 
 import celpy
-from octorules.linter.engine import LintResult, Severity
+from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
 
 _BASE_ACTIONS = frozenset({"allow", "throttle", "rate_based_ban", "redirect"})
 _DENY_STATUSES = frozenset({403, 404, 502})
@@ -179,6 +179,8 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
         _check_description(rule, results, phase, ref_str)
         _check_rate_limit_deep(rule, results, phase, ref_str, seen_enforce_on_keys)
         _check_action_params(rule, results, phase, ref_str)
+        _check_preview(rule, results, phase, ref_str)
+        _check_always_true_false(rule, results, phase, ref_str)
 
     _check_duplicate_priorities(seen_priorities, results, phase)
     _check_duplicate_expressions(seen_expressions, results, phase)
@@ -1038,6 +1040,93 @@ def _check_action_params(
                 field="rate_limit_options.exceed_redirect_options",
             )
         )
+
+
+# --- GA600/GA601/GA602: Preview, always-true, always-false ------------------
+
+
+def _check_preview(
+    rule: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA600: rule is in preview mode (logs only, not enforced)."""
+    if rule.get("preview") is True:
+        results.append(
+            LintResult(
+                rule_id="GA600",
+                severity=Severity.INFO,
+                message="Rule is in preview mode (preview: true) — not enforced",
+                phase=phase,
+                ref=ref,
+                field="preview",
+            )
+        )
+
+
+def _check_always_true_false(
+    rule: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA601/GA602: expression is always true (catch-all) or always false (dead).
+
+    Checks both CEL expressions and IP-based match-all patterns.
+    """
+    match = rule.get("match")
+    if not isinstance(match, dict):
+        return
+
+    # --- CEL expression checks ---
+    expr_obj = match.get("expr")
+    if isinstance(expr_obj, dict):
+        expression = expr_obj.get("expression")
+        if isinstance(expression, str) and expression.strip():
+            normalized = " ".join(expression.strip().lower().split())
+            if is_always_true(normalized):
+                results.append(
+                    LintResult(
+                        rule_id="GA601",
+                        severity=Severity.WARNING,
+                        message="Expression is always true — this is a catch-all rule",
+                        phase=phase,
+                        ref=ref,
+                        field="match.expr.expression",
+                    )
+                )
+                return
+            if is_always_false(normalized):
+                results.append(
+                    LintResult(
+                        rule_id="GA602",
+                        severity=Severity.WARNING,
+                        message="Expression is always false — rule never matches",
+                        phase=phase,
+                        ref=ref,
+                        field="match.expr.expression",
+                    )
+                )
+                return
+
+    # --- IP-based match-all: SRC_IPS_V1 with srcIpRanges: ["*"] ---
+    ve = match.get("versioned_expr")
+    if ve == "SRC_IPS_V1":
+        config = match.get("config")
+        if isinstance(config, dict):
+            ranges = config.get("src_ip_ranges")
+            if isinstance(ranges, list) and ranges == ["*"]:
+                results.append(
+                    LintResult(
+                        rule_id="GA601",
+                        severity=Severity.WARNING,
+                        message=("src_ip_ranges is ['*'] — this is a catch-all rule"),
+                        phase=phase,
+                        ref=ref,
+                        field="match.config.src_ip_ranges",
+                    )
+                )
 
 
 # --- Cross-rule checks ------------------------------------------------------

@@ -150,7 +150,7 @@ match:
 
 ## Linting
 
-44 Cloud Armor-specific lint rules (GA prefix) covering structure, expressions, actions, rate limiting, and cross-rule analysis:
+47 Cloud Armor-specific lint rules (GA prefix) covering structure, expressions, actions, rate limiting, and cross-rule analysis:
 
 | Prefix | Category | Rules |
 |--------|----------|-------|
@@ -160,12 +160,13 @@ match:
 | GA300-GA314 | Match / expression / CEL | 12 |
 | GA400-GA431 | Rate limit / redirect / action params | 18 |
 | GA500-GA503 | Best practice | 2 |
+| GA600-GA602 | Preview / catch-all | 3 |
 
 ```bash
 octorules lint --config config.yaml
 ```
 
-Lint rules are registered automatically when octorules-google is installed. CEL expression validation uses [cel-python](https://pypi.org/project/cel-python/).
+Lint rules are registered automatically when octorules-google is installed. CEL expression validation uses [cel-python](https://pypi.org/project/cel-python/). See [docs/lint.md](docs/lint.md) for the full rule reference with examples.
 
 ## Known limitations
 
