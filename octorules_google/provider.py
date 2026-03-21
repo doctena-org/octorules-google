@@ -239,6 +239,8 @@ class CloudArmorProvider:
         3. Removes old priorities that are no longer needed.
 
         This guarantees the policy never has *fewer* rules than intended.
+        If a step fails partway through, the policy may have stale rules
+        until the next successful sync.
         """
         current_rules = self._get_rules(scope)
         policy_name = scope.zone_id
