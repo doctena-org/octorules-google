@@ -244,6 +244,7 @@ def _check_priority(
 
 
 def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -> None:
+    """GA002/GA200/GA201/GA400/GA401 -- validate action and its required options."""
     action = rule.get("action", "")
     if not action:
         results.append(
@@ -456,6 +457,7 @@ def _check_match(
     seen_expressions: dict[str, list[str]],
     seen_waf_rulesets: dict[str, list[str]],
 ) -> None:
+    """GA003/GA300-GA304 -- validate match structure, CIDRs, and CEL expressions."""
     match = rule.get("match")
     if match is None:
         results.append(

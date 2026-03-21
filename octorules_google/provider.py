@@ -151,20 +151,22 @@ class CloudArmorProvider:
 
     @property
     def max_workers(self) -> int:
+        """Maximum number of concurrent workers for this provider."""
         return self._max_workers
 
     @property
     def account_id(self) -> str | None:
-        # Cloud Armor has no account-level scopes; all policies live under
-        # a project but are addressed individually (like zones, not accounts).
+        """Return None; Cloud Armor has no account-level scope."""
         return None
 
     @property
     def account_name(self) -> str | None:
+        """Return None; Cloud Armor has no account-level scope."""
         return None
 
     @property
     def zone_plans(self) -> dict[str, str]:
+        """Return empty dict; Cloud Armor has no zone plan tiers."""
         return {}
 
     # -- Helpers --
@@ -311,56 +313,68 @@ class CloudArmorProvider:
 
     @_wrap_provider_errors
     def list_custom_rulesets(self, scope: Scope) -> list[dict]:
+        """Return empty list; Cloud Armor does not support custom rulesets."""
         return []
 
     @_wrap_provider_errors
     def get_custom_ruleset(self, scope: Scope, ruleset_id: str) -> list[dict]:
+        """Return empty list; Cloud Armor does not support custom rulesets."""
         return []
 
     @_wrap_provider_errors
     def put_custom_ruleset(self, scope: Scope, ruleset_id: str, rules: list[dict]) -> int:
+        """Raise ProviderError; Cloud Armor does not support custom rulesets."""
         raise ProviderError("Custom rulesets are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def get_all_custom_rulesets(
         self, scope: Scope, *, ruleset_ids: list[str] | None = None
     ) -> dict[str, dict]:
+        """Return empty dict; Cloud Armor does not support custom rulesets."""
         return {}
 
     # -- Lists (not supported — Cloud Armor uses inline IP ranges) --
 
     @_wrap_provider_errors
     def list_lists(self, scope: Scope) -> list[dict]:
+        """Return empty list; Cloud Armor uses inline IP ranges, not lists."""
         return []
 
     @_wrap_provider_errors
     def create_list(self, scope: Scope, name: str, kind: str, description: str = "") -> dict:
+        """Raise ProviderError; Cloud Armor uses inline IP ranges, not lists."""
         raise ProviderError("Lists are not supported by Cloud Armor (use inline IP ranges)")
 
     @_wrap_provider_errors
     def delete_list(self, scope: Scope, list_id: str) -> None:
+        """Raise ProviderError; Cloud Armor does not support lists."""
         raise ProviderError("Lists are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def update_list_description(self, scope: Scope, list_id: str, description: str) -> None:
+        """Raise ProviderError; Cloud Armor does not support lists."""
         raise ProviderError("Lists are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def get_list_items(self, scope: Scope, list_id: str) -> list[dict]:
+        """Return empty list; Cloud Armor does not support lists."""
         return []
 
     @_wrap_provider_errors
     def put_list_items(self, scope: Scope, list_id: str, items: list[dict]) -> str:
+        """Raise ProviderError; Cloud Armor does not support lists."""
         raise ProviderError("Lists are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def poll_bulk_operation(
         self, scope: Scope, operation_id: str, *, timeout: float = 120.0
     ) -> str:
+        """Return 'completed'; Cloud Armor has no async bulk operations."""
         return "completed"
 
     @_wrap_provider_errors
     def get_all_lists(
         self, scope: Scope, *, list_names: list[str] | None = None
     ) -> dict[str, dict]:
+        """Return empty dict; Cloud Armor does not support lists."""
         return {}
