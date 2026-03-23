@@ -136,7 +136,7 @@ class CloudArmorProvider:
         client: compute_v1.SecurityPoliciesClient | None = None,
         project: str | None = None,
         **_extra: object,
-    ):
+    ) -> None:
         self._client = client or compute_v1.SecurityPoliciesClient()
         self._project = project or os.environ.get("GCLOUD_PROJECT", "")
         if not self._project:
@@ -325,6 +325,18 @@ class CloudArmorProvider:
 
     @_wrap_provider_errors
     def put_custom_ruleset(self, scope: Scope, ruleset_id: str, rules: list[dict]) -> int:
+        """Raise ProviderError; Cloud Armor does not support custom rulesets."""
+        raise ProviderError("Custom rulesets are not supported by Cloud Armor")
+
+    @_wrap_provider_errors
+    def create_custom_ruleset(
+        self, scope: Scope, name: str, phase: str, capacity: int, description: str = ""
+    ) -> dict:
+        """Raise ProviderError; Cloud Armor does not support custom rulesets."""
+        raise ProviderError("Custom rulesets are not supported by Cloud Armor")
+
+    @_wrap_provider_errors
+    def delete_custom_ruleset(self, scope: Scope, ruleset_id: str) -> None:
         """Raise ProviderError; Cloud Armor does not support custom rulesets."""
         raise ProviderError("Custom rulesets are not supported by Cloud Armor")
 

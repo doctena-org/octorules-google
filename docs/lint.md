@@ -1,6 +1,6 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **47 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **67 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
 
 ### Suppressing rules
 
@@ -73,15 +73,31 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA312](#ga312--invalid-versioned_expr-value) | Invalid versioned_expr value | ERROR |
 | [GA313](#ga313--missing-config-when-versioned_expr-is-present) | Missing config when versioned_expr is present | ERROR |
 | [GA314](#ga314--empty-match-conditions) | Empty match conditions | WARNING |
+| [GA315](#ga315--unknown-country-code-in-originregion_code-comparison) | Unknown country code in origin.region_code comparison | WARNING |
+| [GA316](#ga316--unknown-http-method-in-requestmethod-comparison) | Unknown HTTP method in request.method comparison | WARNING |
+| [GA317](#ga317--invalid-cidr-in-iniprange) | Invalid CIDR in inIpRange() | ERROR |
+| [GA317b](#ga317b--privatereserved-ip-range-in-iniprange) | Private/reserved IP range in inIpRange() | WARNING |
+| [GA318](#ga318--cel-type-mismatch) | CEL type mismatch | WARNING |
+| [GA319](#ga319--case-sensitive-string-comparison) | Case-sensitive string comparison may need case-insensitive matching | INFO |
 | [GA400](#ga400--rate-limit-action-requires-rate_limit_options) | Rate-limit action requires 'rate_limit_options' | ERROR |
 | [GA401](#ga401--redirect-action-requires-redirect_options) | Redirect action requires 'redirect_options' | ERROR |
 | [GA402](#ga402--invalid-redirect-type) | Invalid redirect type | ERROR |
 | [GA403](#ga403--missing-required-field-in-rate_limit_options) | Missing required field in rate_limit_options | ERROR |
 | [GA404](#ga404--external_302-redirect-requires-target-url) | EXTERNAL_302 redirect requires 'target' URL | ERROR |
+| [GA409](#ga409--redirect-target-must-be-valid-url-for-external_302) | redirect_options.target must be a valid URL for EXTERNAL_302 | ERROR |
 | [GA405](#ga405--conform_action-must-be-allow) | conform_action must be 'allow' | ERROR |
 | [GA406](#ga406--invalid-exceed_action) | Invalid exceed_action | ERROR |
 | [GA407](#ga407--invalid-interval_sec-value) | Invalid interval_sec value | ERROR |
 | [GA408](#ga408--rate_limit_threshold-count-out-of-range) | rate_limit_threshold count out of range | ERROR |
+| [GA410](#ga410--invalid-ban_threshold-structure) | Invalid ban_threshold structure | ERROR |
+| [GA411](#ga411--invalid-exceed_redirect_optionstype) | Invalid exceed_redirect_options.type | ERROR |
+| [GA412](#ga412--exceed_redirect_optionstarget-must-be-valid-url-for-external_302) | exceed_redirect_options.target must be a valid URL for EXTERNAL_302 | ERROR |
+| [GA413](#ga413--invalid-regex-pattern-in-matches) | Invalid regex pattern in matches() | WARNING |
+| [GA414](#ga414--invalid-enforce_on_key_configs-structure) | Invalid enforce_on_key_configs structure | ERROR |
+| [GA415](#ga415--duplicate-enforce_on_key_type-in-enforce_on_key_configs) | Duplicate enforce_on_key_type in enforce_on_key_configs | WARNING |
+| [GA416](#ga416--preconfigured-waf-sensitivity-level-must-be-0-4) | Preconfigured WAF sensitivity level must be 0-4 | WARNING |
+| [GA418](#ga418--invalid-http-header-name-in-cel-expression) | Invalid HTTP header name in CEL expression | WARNING |
+| [GA419](#ga419--redirect-target-must-not-be-empty) | Redirect target must not be empty | ERROR |
 | [GA420](#ga420--rate_limit_threshold-missing-required-subfields) | rate_limit_threshold missing required subfields | ERROR |
 | [GA421](#ga421--invalid-type-for-rate-limit-field) | Invalid type for rate limit field | ERROR |
 | [GA422](#ga422--enforce_on_key-required-for-rate_based_ban-with-redirect-exceed_action) | enforce_on_key required for rate_based_ban with redirect exceed_action | WARNING |
@@ -89,9 +105,13 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA424](#ga424--enforce_on_key_name-required-for-http_headerhttp_cookie) | enforce_on_key_name required for HTTP_HEADER/HTTP_COOKIE | ERROR |
 | [GA425](#ga425--ban_duration_sec-required-for-rate_based_ban) | ban_duration_sec required for rate_based_ban | ERROR |
 | [GA426](#ga426--invalid-ban_duration_sec-must-be-positive-integer) | Invalid ban_duration_sec (must be positive integer) | ERROR |
+| [GA427](#ga427--ban_duration_sec-exceeds-maximum-3600-seconds) | ban_duration_sec exceeds maximum (3600 seconds) | ERROR |
+| [GA428](#ga428--invalid-enforce_on_key_name-value) | Invalid enforce_on_key_name value | WARNING |
 | [GA429](#ga429--ban_duration_sec-is-only-valid-for-rate_based_ban) | ban_duration_sec is only valid for rate_based_ban | WARNING |
 | [GA431](#ga431--redirect-exceed_action-requires-exceed_redirect_options) | redirect exceed_action requires exceed_redirect_options | ERROR |
+| [GA432](#ga432--conflicting-rate-limit-options) | Conflicting rate-limit options | ERROR |
 | [GA500](#ga500--description-exceeds-1024-character-limit) | Description exceeds 1024 character limit | WARNING |
+| [GA502](#ga502--rule-count-exceeds-tier-limit) | Rule count exceeds tier limit | WARNING |
 | [GA503](#ga503--privatereserved-ip-range-in-src_ip_ranges) | Private/reserved IP range in src_ip_ranges | WARNING |
 | [GA600](#ga600--rule-is-in-preview-mode) | Rule is in preview mode (preview: true) | INFO |
 | [GA601](#ga601--expression-is-always-true) | Expression is always true — catch-all rule | WARNING |
@@ -425,7 +445,7 @@ gcloud_armor_custom_rules:
 
 ---
 
-## Match / Expression / CEL (GA300--GA314)
+## Match / Expression / CEL (GA300--GA319)
 
 ### GA300 -- Match must have 'expr' or 'config'+'versioned_expr', not both/neither
 
@@ -715,6 +735,140 @@ gcloud_armor_custom_rules:
 
 ---
 
+### GA315 -- Unknown country code in origin.region_code comparison
+
+**Severity:** WARNING
+
+Validates country codes used in `origin.region_code` comparisons. Country codes must be exactly 2 uppercase ASCII letters (ISO 3166-1 alpha-2 format).
+
+Detected patterns:
+- `origin.region_code == "xx"` — equality comparison
+- `origin.region_code in ["xx", "yy"]` — list membership
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "origin.region_code == 'USA'"
+```
+
+**Fix:** Use 2-letter uppercase ISO country codes: `"US"`, not `"USA"` or `"us"`.
+
+---
+
+### GA316 -- Unknown HTTP method in request.method comparison
+
+**Severity:** WARNING
+
+Validates HTTP method names used in `request.method` comparisons. Catches typos like `"GETT"` and suggests the closest valid method using fuzzy matching.
+
+Valid methods: CONNECT, DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, TRACE.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "request.method == 'GETT'"
+```
+
+**Fix:** Use the correct HTTP method spelling: `"GET"`, not `"GETT"`.
+
+---
+
+### GA317 -- Invalid CIDR in inIpRange()
+
+**Severity:** ERROR
+
+Validates CIDR notation inside `inIpRange(origin.ip, "CIDR")` calls. Invalid CIDR strings will cause a runtime error at the Cloud Armor API.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "inIpRange(origin.ip, 'not-a-cidr')"
+```
+
+**Fix:** Use valid CIDR notation: `"1.2.3.0/24"` or `"2001:db8::/32"`.
+
+---
+
+### GA317b -- Private/reserved IP range in inIpRange()
+
+**Severity:** WARNING
+
+Flags private or reserved IP ranges (RFC 1918, loopback, link-local, ULA) inside `inIpRange()` calls. Cloud Armor operates on public internet traffic, so private ranges are likely mistakes.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "inIpRange(origin.ip, '192.168.1.0/24')"
+```
+
+**Fix:** Use public IP ranges, or suppress with `# octorules:disable=GA317b` if intentional.
+
+---
+
+### GA318 -- CEL type mismatch
+
+**Severity:** WARNING
+
+Detects type mismatches in CEL field comparisons. For example, `origin.ip` is a string but comparing it with an integer literal, or `origin.asn` is an integer but comparing it with a string literal.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "origin.ip == 42"
+```
+
+**Fix:** Use the correct literal type: `origin.ip == '1.2.3.4'` (string) or `origin.asn == 15169` (integer).
+
+---
+
+### GA319 -- Case-sensitive string comparison
+
+**Severity:** INFO
+
+Warns when string equality comparisons on `request.path`, `request.query`, or `request.host` use mixed-case string literals. These comparisons are case-sensitive in CEL, which may cause unexpected behavior.
+
+Only triggers when the literal contains mixed case (not all-lowercase or all-uppercase). Does not trigger for `request.method` or `origin.region_code` which are conventionally uppercase.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "request.path == '/Admin'"
+```
+
+**Fix:** Use `matches()` with the `(?i)` flag for case-insensitive matching: `request.path.matches('(?i)/admin')`.
+
+---
+
 ## Rate Limit / Redirect / Action Params (GA400--GA431)
 
 ### GA400 -- Rate-limit action requires 'rate_limit_options'
@@ -864,6 +1018,30 @@ gcloud_armor_redirect_rules:
 
 ---
 
+### GA409 -- redirect_options.target must be a valid URL for EXTERNAL_302
+
+**Severity:** ERROR
+
+When `redirect_options.type` is `EXTERNAL_302`, the `target` must be a full URL starting with `http://` or `https://`. Relative paths and other schemes are not valid.
+
+**Triggers on:**
+
+```yaml
+    redirect_options:
+      type: EXTERNAL_302
+      target: "/relative/path"
+```
+
+**Fix:** Use a full URL:
+
+```yaml
+    redirect_options:
+      type: EXTERNAL_302
+      target: "https://example.com/blocked"
+```
+
+---
+
 ### GA405 -- conform_action must be 'allow'
 
 **Severity:** ERROR
@@ -960,6 +1138,217 @@ The `count` in `rate_limit_threshold` must be a positive integer. For `throttle`
 
 ```yaml
         count: 100
+```
+
+---
+
+### GA410 -- Invalid ban_threshold structure
+
+**Severity:** ERROR
+
+The `ban_threshold` object (used with `rate_based_ban`) must be a dict with two fields: `count` (positive integer) and `interval_sec` (one of the valid Cloud Armor interval values). Both fields are required.
+
+**Triggers on:**
+
+```yaml
+    rate_limit_options:
+      ban_threshold:
+        count: -1
+        interval_sec: 45
+```
+
+**Fix:** Use valid values:
+
+```yaml
+      ban_threshold:
+        count: 5
+        interval_sec: 60
+```
+
+---
+
+### GA411 -- Invalid exceed_redirect_options.type
+
+**Severity:** ERROR
+
+The `exceed_redirect_options.type` value must be either `GOOGLE_RECAPTCHA` or `EXTERNAL_302`, the same valid types as `redirect_options.type`.
+
+**Triggers on:**
+
+```yaml
+    rate_limit_options:
+      exceed_action: redirect
+      exceed_redirect_options:
+        type: PERMANENT_301
+        target: "https://example.com"
+```
+
+**Fix:** Use a valid redirect type:
+
+```yaml
+      exceed_redirect_options:
+        type: EXTERNAL_302
+        target: "https://example.com"
+```
+
+---
+
+### GA412 -- exceed_redirect_options.target must be a valid URL for EXTERNAL_302
+
+**Severity:** ERROR
+
+When `exceed_redirect_options.type` is `EXTERNAL_302`, the `target` must be a full URL starting with `http://` or `https://`.
+
+**Triggers on:**
+
+```yaml
+      exceed_redirect_options:
+        type: EXTERNAL_302
+        target: "/relative/path"
+```
+
+**Fix:** Use a full URL:
+
+```yaml
+      exceed_redirect_options:
+        type: EXTERNAL_302
+        target: "https://example.com/rate-limited"
+```
+
+---
+
+### GA413 -- Invalid regex pattern in matches()
+
+**Severity:** WARNING
+
+A CEL `matches()` call contains a regex pattern that fails to compile. Cloud Armor will reject the rule at the API level.
+
+**Triggers on:**
+
+```yaml
+    match:
+      expr:
+        expression: "request.path.matches('[invalid')"
+```
+
+**Fix:** Use a valid regex pattern:
+
+```yaml
+        expression: "request.path.matches('.*api.*')"
+```
+
+---
+
+### GA414 -- Invalid enforce_on_key_configs structure
+
+**Severity:** ERROR
+
+The `enforce_on_key_configs` field must be a list of at most 3 dicts, each containing an `enforce_on_key_type` field. It is mutually exclusive with `enforce_on_key` -- you cannot use both.
+
+**Triggers on:**
+
+```yaml
+    rate_limit_options:
+      enforce_on_key: IP
+      enforce_on_key_configs:
+        - enforce_on_key_type: IP
+```
+
+**Fix:** Use either `enforce_on_key` or `enforce_on_key_configs`, not both:
+
+```yaml
+    rate_limit_options:
+      enforce_on_key_configs:
+        - enforce_on_key_type: IP
+        - enforce_on_key_type: HTTP_HEADER
+          enforce_on_key_name: "X-API-Key"
+```
+
+---
+
+### GA415 -- Duplicate enforce_on_key_type in enforce_on_key_configs
+
+**Severity:** WARNING
+
+Two or more entries in `enforce_on_key_configs` use the same `enforce_on_key_type` value. This is redundant and likely a copy-paste mistake.
+
+**Triggers on:**
+
+```yaml
+    rate_limit_options:
+      enforce_on_key_configs:
+        - enforce_on_key_type: IP
+        - enforce_on_key_type: IP
+```
+
+**Fix:** Remove the duplicate entry or use different key types.
+
+---
+
+### GA416 -- Preconfigured WAF sensitivity level must be 0-4
+
+**Severity:** WARNING
+
+The `sensitivity` option passed to `evaluatePreconfiguredWaf()` or `evaluatePreconfiguredExpr()` must be an integer between 0 and 4 (inclusive). Values outside this range are rejected by Cloud Armor.
+
+**Triggers on:**
+
+```yaml
+    match:
+      expr:
+        expression: "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 9})"
+```
+
+**Fix:** Use a valid sensitivity level:
+
+```yaml
+        expression: "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 4})"
+```
+
+---
+
+### GA418 -- Invalid HTTP header name in CEL expression
+
+**Severity:** WARNING
+
+A `request.headers["..."]` bracket access uses a header name that violates RFC 7230 token character rules. Header names may only contain `A-Z a-z 0-9 ! # $ % & ' * + - . ^ _ `` | ~`. Spaces, parentheses, and other characters are not valid.
+
+**Triggers on:**
+
+```yaml
+    match:
+      expr:
+        expression: 'request.headers["Bad Header"] == "value"'
+```
+
+**Fix:** Use a valid HTTP header name:
+
+```yaml
+        expression: 'request.headers["X-Custom-Header"] == "value"'
+```
+
+---
+
+### GA419 -- Redirect target must not be empty
+
+**Severity:** ERROR
+
+The `target` field in `redirect_options` or `exceed_redirect_options` is empty or whitespace-only. A redirect must have a non-empty destination.
+
+**Triggers on:**
+
+```yaml
+    redirect_options:
+      type: EXTERNAL_302
+      target: ""
+```
+
+**Fix:** Provide a non-empty target URL:
+
+```yaml
+    redirect_options:
+      type: EXTERNAL_302
+      target: "https://example.com/blocked"
 ```
 
 ---
@@ -1141,6 +1530,53 @@ The `ban_duration_sec` value must be a positive integer representing the ban dur
 
 ---
 
+### GA427 -- ban_duration_sec exceeds maximum (3600 seconds)
+
+**Severity:** ERROR
+
+The `ban_duration_sec` value must not exceed 3600 seconds (1 hour). Cloud Armor rejects values above this limit.
+
+**Triggers on:**
+
+```yaml
+      ban_duration_sec: 86400
+```
+
+**Fix:** Use a value between 1 and 3600:
+
+```yaml
+      ban_duration_sec: 3600
+```
+
+---
+
+### GA428 -- Invalid enforce_on_key_name value
+
+**Severity:** WARNING
+
+When `enforce_on_key` is `HTTP_HEADER` or `HTTP_COOKIE`, the `enforce_on_key_name` value must be a valid name:
+
+- Must not be empty
+- Must not exceed 128 characters
+- Must not contain spaces or control characters
+- For `HTTP_HEADER`: must contain only valid RFC 7230 token characters (`A-Z a-z 0-9 ! # $ % & ' * + - . ^ _ `` | ~`)
+
+**Triggers on:**
+
+```yaml
+      enforce_on_key: HTTP_HEADER
+      enforce_on_key_name: "X-Bad Header"
+```
+
+**Fix:** Use a valid header or cookie name:
+
+```yaml
+      enforce_on_key: HTTP_HEADER
+      enforce_on_key_name: "X-Custom-Header"
+```
+
+---
+
 ### GA429 -- ban_duration_sec is only valid for rate_based_ban
 
 **Severity:** WARNING
@@ -1197,6 +1633,33 @@ When `exceed_action` is `"redirect"`, the `exceed_redirect_options` block must b
 
 ---
 
+### GA432 -- Conflicting rate-limit options
+
+**Severity:** ERROR
+
+Detects impossible or meaningless combinations of rate-limit options:
+
+- `exceed_redirect_options` is present but `exceed_action` is not `redirect` -- the redirect options will be ignored
+- `ban_threshold` is present but `rate_limit_threshold` is missing -- a ban threshold without a rate-limit threshold makes no sense
+
+**Triggers on:**
+
+```yaml
+    rate_limit_options:
+      conform_action: allow
+      exceed_action: deny-429
+      rate_limit_threshold:
+        count: 100
+        interval_sec: 60
+      exceed_redirect_options:
+        type: EXTERNAL_302
+        target: "https://example.com"
+```
+
+**Fix:** Remove the conflicting option, or change `exceed_action` to `redirect`.
+
+---
+
 ## Best Practice (GA500--GA503)
 
 ### GA500 -- Description exceeds 1024 character limit
@@ -1231,6 +1694,26 @@ gcloud_armor_custom_rules:
 ```
 
 **Fix:** Use public IP ranges that match actual client traffic, or remove the rule if it was added in error.
+
+---
+
+### GA502 -- Rule count exceeds tier limit
+
+**Severity:** WARNING
+
+Cloud Armor has per-policy rule count limits that vary by tier:
+
+| Tier | Limit |
+|------|-------|
+| Standard | 256 |
+| Plus | 512 |
+| Enterprise | 1024 |
+
+This check compares the number of rules in a phase against the configured tier's limit. The tier is determined by the `plan_tier` setting (defaults to "enterprise", the most permissive).
+
+**Triggers on:** A phase with more rules than the tier allows.
+
+**Fix:** Reduce the number of rules, upgrade to a higher tier, or split rules across multiple policies.
 
 ---
 

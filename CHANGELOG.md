@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **GA315** (WARNING): Unknown country code in `origin.region_code` comparisons
+  (must be exactly 2 uppercase letters).
+- **GA316** (WARNING): Unknown HTTP method in `request.method` comparisons with
+  fuzzy-match suggestions for typos.
+- **GA317** (ERROR): Invalid CIDR notation inside `inIpRange()` calls.
+- **GA317b** (WARNING): Private/reserved IP range inside `inIpRange()` calls.
+- **GA318** (WARNING): CEL type mismatch detection (e.g., `origin.ip == 42` where
+  `origin.ip` is a string).
+- **GA319** (INFO): Case-sensitive string comparison on `request.path`,
+  `request.query`, or `request.host` with mixed-case literals.
+- **GA502** (WARNING): Rule count exceeds Cloud Armor tier limit (standard: 256,
+  plus: 512, enterprise: 1024).
+- `create_custom_ruleset` and `delete_custom_ruleset` stub methods. Required by
+  the updated `BaseProvider` protocol. Cloud Armor does not support custom
+  rulesets, so both raise `ProviderError`.
+- **GA409** (ERROR): `redirect_options.target` must be a valid URL for `EXTERNAL_302`.
+- **GA410** (ERROR): `ban_threshold` structure validation (`count` must be positive
+  integer, `interval_sec` must be valid interval).
+- **GA411** (ERROR): `exceed_redirect_options.type` must be `GOOGLE_RECAPTCHA` or
+  `EXTERNAL_302`.
+- **GA412** (ERROR): `exceed_redirect_options.target` must be a valid URL for
+  `EXTERNAL_302`.
+- **GA413** (WARNING): Invalid regex pattern in CEL `matches()` calls.
+- **GA414** (ERROR): `enforce_on_key_configs` structure validation (must be list,
+  max 3 entries, each dict with `enforce_on_key_type`, mutually exclusive with
+  `enforce_on_key`).
+- **GA415** (WARNING): Duplicate `enforce_on_key_type` in `enforce_on_key_configs`.
+- **GA416** (WARNING): Preconfigured WAF sensitivity level must be 0-4.
+- **GA418** (WARNING): Invalid HTTP header name in CEL `request.headers["..."]`
+  bracket access (RFC 7230 tchar compliance).
+- **GA419** (ERROR): Redirect target must not be empty or whitespace-only (applies
+  to both `redirect_options.target` and `exceed_redirect_options.target`).
+
+### Changed
+- Requires `octorules>=0.18.0`.
+
 ## [0.3.0] - 2026-03-20
 
 ### Added

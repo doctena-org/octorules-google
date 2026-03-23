@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import ipaddress
 import re
 
@@ -109,6 +110,73 @@ _VALID_ENFORCE_ON_KEYS = frozenset(
         "REGION_CODE",
     }
 )
+
+_MAX_BAN_DURATION = 3600
+
+# RFC 7230 token characters for HTTP header names: tchar = "!" / "#" / "$" /
+# "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" /
+# DIGIT / ALPHA.  We allow these (case-insensitive) for enforce_on_key_name
+# when enforce_on_key is HTTP_HEADER.
+_HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
+_MAX_ENFORCE_ON_KEY_NAME = 128
+_MAX_ENFORCE_ON_KEY_CONFIGS = 3
+
+# GA413: regex patterns in CEL matches() calls
+_MATCHES_RE = re.compile(r"""matches\(\s*["']([^"']+)["']\s*\)""")
+
+# GA416: sensitivity level in evaluatePreconfiguredWaf/Expr calls
+_SENSITIVITY_RE = re.compile(
+    r"""evaluatePreconfigured(?:Waf|Expr)\(\s*["'][^"']+["']\s*,"""
+    r"""\s*\{\s*["']sensitivity["']\s*:\s*(\d+)\s*\}\s*\)"""
+)
+
+# GA418: header names in request.headers["..."] bracket access
+_HEADER_BRACKET_RE = re.compile(r"""request\.headers\[\s*["']([^"']+)["']\s*\]""")
+
+# --- GA315: Country code validation in CEL expressions ---
+_COUNTRY_CODE_EQ_RE = re.compile(r"""origin\.region_code\s*==\s*["']([A-Za-z]+)["']""")
+_COUNTRY_CODE_IN_RE = re.compile(r"""origin\.region_code\s+in\s*\[([^\]]+)\]""")
+_QUOTED_STRING_RE = re.compile(r"""["']([^"']+)["']""")
+
+# --- GA316: HTTP method validation in CEL expressions ---
+_VALID_HTTP_METHODS = frozenset(
+    {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
+)
+_HTTP_METHOD_EQ_RE = re.compile(r"""request\.method\s*==\s*["']([^"']+)["']""")
+_HTTP_METHOD_IN_RE = re.compile(r"""request\.method\s+in\s*\[([^\]]+)\]""")
+
+# --- GA317: CIDR validation in inIpRange() ---
+_IN_IP_RANGE_RE = re.compile(r"""inIpRange\s*\(\s*[^,]+,\s*["']([^"']+)["']\s*\)""")
+
+# --- GA318: CEL type mismatch detection ---
+_CEL_FIELD_TYPES: dict[str, str] = {
+    "origin.ip": "string",
+    "origin.user_ip": "string",
+    "origin.region_code": "string",
+    "origin.asn": "int",
+    "origin.tls_ja3_fingerprint": "string",
+    "origin.tls_ja4_fingerprint": "string",
+    "request.method": "string",
+    "request.path": "string",
+    "request.query": "string",
+    "request.scheme": "string",
+    "request.host": "string",
+    "request.url": "string",
+}
+_TYPE_MISMATCH_RE = re.compile(
+    r"""(\b[a-zA-Z_]\w*\.[a-zA-Z_]\w*)\s*(==|!=|>|<|>=|<=)\s*(["'].*?["']|\d+)"""
+)
+
+# --- GA319: Case sensitivity reminder ---
+_CASE_SENSITIVE_FIELDS = frozenset({"request.path", "request.query", "request.host"})
+_CASE_SENSITIVE_CMP_RE = re.compile(r"""(request\.(?:path|query|host))\s*==\s*["']([^"']+)["']""")
+
+# --- GA502: Tier-aware rule count limits ---
+_TIER_RULE_LIMITS: dict[str, int] = {
+    "standard": 256,
+    "plus": 512,
+    "enterprise": 1024,
+}
 
 _VALID_EXCEED_ACTIONS = frozenset(
     {
@@ -448,6 +516,38 @@ def _check_redirect_options(
             )
         )
 
+    # GA419: empty or whitespace-only redirect target
+    target = redir.get("target")
+    if target is not None and isinstance(target, str) and not target.strip():
+        results.append(
+            LintResult(
+                rule_id="GA419",
+                severity=Severity.ERROR,
+                message="redirect target must not be empty",
+                phase=phase,
+                ref=ref,
+                field="redirect_options.target",
+            )
+        )
+        return  # No point checking URL format on empty target
+
+    # GA409: EXTERNAL_302 target must be a valid URL
+    if rtype == "EXTERNAL_302" and target is not None and isinstance(target, str):
+        if not target.startswith(("http://", "https://")):
+            results.append(
+                LintResult(
+                    rule_id="GA409",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"redirect_options.target must be a valid URL"
+                        f" for EXTERNAL_302 (got {target!r})"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="redirect_options.target",
+                )
+            )
+
 
 def _check_match(
     rule: dict,
@@ -770,10 +870,19 @@ def _check_match_deep(
             )
             return  # No point in field/function extraction on empty expr
 
-        # --- GA310/GA311: field and function extraction (only on non-empty exprs) ---
+        # --- GA310/GA311/GA413/GA416/GA418: field, function, regex, sensitivity,
+        #     and header name extraction (only on non-empty exprs) ---
         if isinstance(expression, str) and expression.strip():
             _check_cel_fields(expression, results, phase, ref)
             _check_cel_functions(expression, results, phase, ref)
+            _check_cel_regex(expression, results, phase, ref)
+            _check_cel_sensitivity(expression, results, phase, ref)
+            _check_cel_header_names(expression, results, phase, ref)
+            _check_cel_country_codes(expression, results, phase, ref)
+            _check_cel_http_methods(expression, results, phase, ref)
+            _check_cel_iniprange_cidr(expression, results, phase, ref)
+            _check_cel_type_mismatch(expression, results, phase, ref)
+            _check_cel_case_sensitivity(expression, results, phase, ref)
 
 
 def _check_cel_fields(
@@ -843,6 +952,303 @@ def _check_cel_functions(
             )
 
 
+def _check_cel_regex(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA413: invalid regex pattern in CEL matches() calls."""
+    for m in _MATCHES_RE.finditer(expr):
+        pattern = m.group(1)
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            results.append(
+                LintResult(
+                    rule_id="GA413",
+                    severity=Severity.WARNING,
+                    message=f"Invalid regex pattern in matches(): {exc}",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+
+
+def _check_cel_sensitivity(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA416: preconfigured WAF sensitivity level must be 0-4."""
+    for m in _SENSITIVITY_RE.finditer(expr):
+        level = int(m.group(1))
+        if level < 0 or level > 4:
+            results.append(
+                LintResult(
+                    rule_id="GA416",
+                    severity=Severity.WARNING,
+                    message=f"Preconfigured WAF sensitivity level must be 0-4 (got {level})",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+
+
+def _check_cel_header_names(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA418: invalid HTTP header name in CEL bracket access."""
+    seen: set[str] = set()
+    for m in _HEADER_BRACKET_RE.finditer(expr):
+        name = m.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+        if not _HEADER_NAME_RE.match(name):
+            results.append(
+                LintResult(
+                    rule_id="GA418",
+                    severity=Severity.WARNING,
+                    message=f"Invalid HTTP header name in CEL expression: {name!r}",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+
+
+def _check_cel_country_codes(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA315: validate country codes in origin.region_code comparisons."""
+    codes: list[str] = []
+
+    # origin.region_code == "XX"
+    for m in _COUNTRY_CODE_EQ_RE.finditer(expr):
+        codes.append(m.group(1))
+
+    # origin.region_code in ["US", "CA", ...]
+    for m in _COUNTRY_CODE_IN_RE.finditer(expr):
+        for qm in _QUOTED_STRING_RE.finditer(m.group(1)):
+            codes.append(qm.group(1))
+
+    seen: set[str] = set()
+    for code in codes:
+        if code in seen:
+            continue
+        seen.add(code)
+        if len(code) != 2:
+            results.append(
+                LintResult(
+                    rule_id="GA315",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"Country code {code!r} in origin.region_code comparison"
+                        " must be exactly 2 letters"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+        elif not code.isalpha():
+            results.append(
+                LintResult(
+                    rule_id="GA315",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"Country code {code!r} in origin.region_code comparison must be alphabetic"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+        elif code != code.upper():
+            results.append(
+                LintResult(
+                    rule_id="GA315",
+                    severity=Severity.WARNING,
+                    message=(f"Country code {code!r} should be uppercase ({code.upper()!r})"),
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+
+
+def _check_cel_http_methods(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA316: validate HTTP method names in request.method comparisons."""
+    methods: list[str] = []
+
+    # request.method == "GET"
+    for m in _HTTP_METHOD_EQ_RE.finditer(expr):
+        methods.append(m.group(1))
+
+    # request.method in ["GET", "POST"]
+    for m in _HTTP_METHOD_IN_RE.finditer(expr):
+        for qm in _QUOTED_STRING_RE.finditer(m.group(1)):
+            methods.append(qm.group(1))
+
+    seen: set[str] = set()
+    for method in methods:
+        if method in seen:
+            continue
+        seen.add(method)
+        if method not in _VALID_HTTP_METHODS:
+            close = difflib.get_close_matches(method.upper(), _VALID_HTTP_METHODS, n=1)
+            suggestion = f" (did you mean {close[0]!r}?)" if close else ""
+            results.append(
+                LintResult(
+                    rule_id="GA316",
+                    severity=Severity.WARNING,
+                    message=f"Unknown HTTP method {method!r}{suggestion}",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                    suggestion=(f"Valid methods: {sorted(_VALID_HTTP_METHODS)}"),
+                )
+            )
+
+
+def _check_cel_iniprange_cidr(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA317/GA317b: validate CIDR notation inside inIpRange() calls."""
+    for m in _IN_IP_RANGE_RE.finditer(expr):
+        cidr = m.group(1)
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except ValueError as exc:
+            results.append(
+                LintResult(
+                    rule_id="GA317",
+                    severity=Severity.ERROR,
+                    message=f"Invalid CIDR in inIpRange(): {cidr!r} ({exc})",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+            continue
+
+        # GA317b: check for private/reserved ranges
+        for private in _PRIVATE_SUPERNETS:
+            if net.version == private.version and net.subnet_of(private):
+                results.append(
+                    LintResult(
+                        rule_id="GA317b",
+                        severity=Severity.WARNING,
+                        message=(f"Private/reserved IP range in inIpRange(): {cidr!r}"),
+                        phase=phase,
+                        ref=ref,
+                        field="match.expr.expression",
+                    )
+                )
+                break
+
+
+def _check_cel_type_mismatch(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA318: detect type mismatches in CEL field comparisons."""
+    seen: set[str] = set()
+    for m in _TYPE_MISMATCH_RE.finditer(expr):
+        field_name = m.group(1)
+        literal = m.group(3)
+
+        expected_type = _CEL_FIELD_TYPES.get(field_name)
+        if expected_type is None:
+            continue
+
+        # Determine literal type
+        if literal.startswith(("'", '"')):
+            literal_type = "string"
+        else:
+            literal_type = "int"
+
+        if expected_type == literal_type:
+            continue
+
+        # Deduplicate
+        key = f"{field_name}:{literal}"
+        if key in seen:
+            continue
+        seen.add(key)
+
+        results.append(
+            LintResult(
+                rule_id="GA318",
+                severity=Severity.WARNING,
+                message=(
+                    f"Type mismatch: {field_name} is {expected_type}"
+                    f" but compared with {literal_type} ({literal})"
+                ),
+                phase=phase,
+                ref=ref,
+                field="match.expr.expression",
+            )
+        )
+
+
+def _check_cel_case_sensitivity(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA319: warn when string comparisons on path/query/host use mixed case."""
+    seen: set[str] = set()
+    for m in _CASE_SENSITIVE_CMP_RE.finditer(expr):
+        field_name = m.group(1)
+        literal = m.group(2)
+
+        # Only warn if the literal has mixed case (not all-lower, not all-upper)
+        if literal == literal.lower() or literal == literal.upper():
+            continue
+
+        # Deduplicate
+        key = f"{field_name}:{literal}"
+        if key in seen:
+            continue
+        seen.add(key)
+
+        results.append(
+            LintResult(
+                rule_id="GA319",
+                severity=Severity.INFO,
+                message=(
+                    f"String comparison on {field_name} is case-sensitive;"
+                    " use matches() with (?i) for case-insensitive matching"
+                ),
+                phase=phase,
+                ref=ref,
+                field="match.expr.expression",
+            )
+        )
+
+
 def _check_rate_limit_deep(
     rule: dict,
     results: list[LintResult],
@@ -850,7 +1256,7 @@ def _check_rate_limit_deep(
     ref: str,
     seen_enforce_on_keys: dict[str, str],
 ) -> None:
-    """GA420-GA426 — deep rate-limit parameter validation."""
+    """GA420-GA428 — deep rate-limit parameter validation."""
     action = rule.get("action", "")
     rlo = rule.get("rate_limit_options")
     if not isinstance(rlo, dict):
@@ -998,6 +1404,173 @@ def _check_rate_limit_deep(
                         field="rate_limit_options.ban_duration_sec",
                     )
                 )
+            elif bds > _MAX_BAN_DURATION:
+                results.append(
+                    LintResult(
+                        rule_id="GA427",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"ban_duration_sec {bds} exceeds maximum ({_MAX_BAN_DURATION} seconds)"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.ban_duration_sec",
+                        suggestion=f"Must be between 1 and {_MAX_BAN_DURATION}",
+                    )
+                )
+
+    # --- GA428: enforce_on_key_name content validation ---
+    eokn = rlo.get("enforce_on_key_name")
+    if eokn is not None and isinstance(eokn, str) and eok in ("HTTP_HEADER", "HTTP_COOKIE"):
+        if not eokn:
+            results.append(
+                LintResult(
+                    rule_id="GA428",
+                    severity=Severity.WARNING,
+                    message="enforce_on_key_name must not be empty",
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_name",
+                )
+            )
+        elif len(eokn) > _MAX_ENFORCE_ON_KEY_NAME:
+            results.append(
+                LintResult(
+                    rule_id="GA428",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"enforce_on_key_name exceeds {_MAX_ENFORCE_ON_KEY_NAME}"
+                        f" characters ({len(eokn)})"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_name",
+                )
+            )
+        elif any(c <= "\x1f" or c == "\x7f" for c in eokn):
+            results.append(
+                LintResult(
+                    rule_id="GA428",
+                    severity=Severity.WARNING,
+                    message="enforce_on_key_name contains control characters",
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_name",
+                )
+            )
+        elif " " in eokn:
+            results.append(
+                LintResult(
+                    rule_id="GA428",
+                    severity=Severity.WARNING,
+                    message="enforce_on_key_name contains spaces",
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_name",
+                )
+            )
+        elif eok == "HTTP_HEADER" and not _HEADER_NAME_RE.match(eokn):
+            results.append(
+                LintResult(
+                    rule_id="GA428",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"enforce_on_key_name {eokn!r} contains invalid header name"
+                        " characters (RFC 7230)"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_name",
+                    suggestion="Header names may only contain tchar (RFC 7230)",
+                )
+            )
+
+    # --- GA414/GA415: enforce_on_key_configs validation ---
+    eokc = rlo.get("enforce_on_key_configs")
+    if eokc is not None:
+        # GA414: mutually exclusive with enforce_on_key
+        if eok is not None:
+            results.append(
+                LintResult(
+                    rule_id="GA414",
+                    severity=Severity.ERROR,
+                    message=("enforce_on_key_configs is mutually exclusive with enforce_on_key"),
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_configs",
+                )
+            )
+
+        if not isinstance(eokc, list):
+            results.append(
+                LintResult(
+                    rule_id="GA414",
+                    severity=Severity.ERROR,
+                    message="enforce_on_key_configs must be a list",
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_configs",
+                )
+            )
+        else:
+            # GA414: max 3 entries
+            if len(eokc) > _MAX_ENFORCE_ON_KEY_CONFIGS:
+                results.append(
+                    LintResult(
+                        rule_id="GA414",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"enforce_on_key_configs allows at most"
+                            f" {_MAX_ENFORCE_ON_KEY_CONFIGS} entries (got {len(eokc)})"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.enforce_on_key_configs",
+                    )
+                )
+            # GA414: each entry must be a dict with enforce_on_key_type
+            for i, entry in enumerate(eokc):
+                if not isinstance(entry, dict):
+                    results.append(
+                        LintResult(
+                            rule_id="GA414",
+                            severity=Severity.ERROR,
+                            message=(f"enforce_on_key_configs[{i}] must be a dict"),
+                            phase=phase,
+                            ref=ref,
+                            field="rate_limit_options.enforce_on_key_configs",
+                        )
+                    )
+                elif "enforce_on_key_type" not in entry:
+                    results.append(
+                        LintResult(
+                            rule_id="GA414",
+                            severity=Severity.ERROR,
+                            message=(f"enforce_on_key_configs[{i}] missing 'enforce_on_key_type'"),
+                            phase=phase,
+                            ref=ref,
+                            field="rate_limit_options.enforce_on_key_configs",
+                        )
+                    )
+
+            # GA415: duplicate enforce_on_key_type values
+            seen_types: list[str] = []
+            for entry in eokc:
+                if isinstance(entry, dict):
+                    kt = entry.get("enforce_on_key_type")
+                    if kt is not None:
+                        seen_types.append(kt)
+            if len(seen_types) != len(set(seen_types)):
+                results.append(
+                    LintResult(
+                        rule_id="GA415",
+                        severity=Severity.WARNING,
+                        message="Duplicate enforce_on_key_type in enforce_on_key_configs",
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.enforce_on_key_configs",
+                    )
+                )
 
     # Track enforce_on_key for cross-rule GA105 check
     if action in ("throttle", "rate_based_ban") and eok is not None:
@@ -1010,7 +1583,7 @@ def _check_action_params(
     phase: str,
     ref: str,
 ) -> None:
-    """GA429/GA431 — action parameter validation."""
+    """GA429/GA431/GA432 — action parameter validation."""
     action = rule.get("action", "")
     rlo = rule.get("rate_limit_options")
     if not isinstance(rlo, dict):
@@ -1040,6 +1613,149 @@ def _check_action_params(
                 phase=phase,
                 ref=ref,
                 field="rate_limit_options.exceed_redirect_options",
+            )
+        )
+
+    # GA432: conflicting rate-limit option combinations
+    # exceed_redirect_options without a redirect exceed_action is meaningless
+    if ea is not None and ea != "redirect" and "exceed_redirect_options" in rlo:
+        results.append(
+            LintResult(
+                rule_id="GA432",
+                severity=Severity.ERROR,
+                message=(
+                    f"exceed_redirect_options is only valid when exceed_action"
+                    f" is 'redirect', got {ea!r}"
+                ),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.exceed_redirect_options",
+            )
+        )
+
+    # GA411/GA412/GA419: exceed_redirect_options validation
+    ero = rlo.get("exceed_redirect_options")
+    if isinstance(ero, dict):
+        ero_type = ero.get("type", "")
+        if ero_type and ero_type not in _VALID_REDIRECT_TYPES:
+            results.append(
+                LintResult(
+                    rule_id="GA411",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"exceed_redirect_options.type must be one of:"
+                        f" {sorted(_VALID_REDIRECT_TYPES)}"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.exceed_redirect_options.type",
+                )
+            )
+
+        ero_target = ero.get("target")
+        if ero_target is not None and isinstance(ero_target, str):
+            if not ero_target.strip():
+                results.append(
+                    LintResult(
+                        rule_id="GA419",
+                        severity=Severity.ERROR,
+                        message="redirect target must not be empty",
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.exceed_redirect_options.target",
+                    )
+                )
+            elif ero_type == "EXTERNAL_302" and not ero_target.startswith(("http://", "https://")):
+                results.append(
+                    LintResult(
+                        rule_id="GA412",
+                        severity=Severity.ERROR,
+                        message=(
+                            "exceed_redirect_options.target must be a valid URL for EXTERNAL_302"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.exceed_redirect_options.target",
+                    )
+                )
+
+    # GA410: ban_threshold structure validation
+    bt = rlo.get("ban_threshold")
+    if bt is not None:
+        if not isinstance(bt, dict):
+            results.append(
+                LintResult(
+                    rule_id="GA410",
+                    severity=Severity.ERROR,
+                    message="ban_threshold must be a dict with 'count' and 'interval_sec'",
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.ban_threshold",
+                )
+            )
+        else:
+            bt_count = bt.get("count")
+            if bt_count is not None:
+                bad_type = not isinstance(bt_count, int) or isinstance(bt_count, bool)
+                if bad_type or bt_count < 1:
+                    results.append(
+                        LintResult(
+                            rule_id="GA410",
+                            severity=Severity.ERROR,
+                            message="ban_threshold.count must be a positive integer",
+                            phase=phase,
+                            ref=ref,
+                            field="rate_limit_options.ban_threshold.count",
+                        )
+                    )
+            else:
+                results.append(
+                    LintResult(
+                        rule_id="GA410",
+                        severity=Severity.ERROR,
+                        message="ban_threshold missing required field 'count'",
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.ban_threshold.count",
+                    )
+                )
+
+            bt_interval = bt.get("interval_sec")
+            if bt_interval is not None:
+                if bt_interval not in _VALID_INTERVALS:
+                    results.append(
+                        LintResult(
+                            rule_id="GA410",
+                            severity=Severity.ERROR,
+                            message=(f"ban_threshold.interval_sec invalid (got {bt_interval!r})"),
+                            phase=phase,
+                            ref=ref,
+                            field="rate_limit_options.ban_threshold.interval_sec",
+                            suggestion=f"Valid values: {sorted(_VALID_INTERVALS)}",
+                        )
+                    )
+            else:
+                results.append(
+                    LintResult(
+                        rule_id="GA410",
+                        severity=Severity.ERROR,
+                        message="ban_threshold missing required field 'interval_sec'",
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.ban_threshold.interval_sec",
+                    )
+                )
+
+    # ban_threshold_sec without rate_limit_threshold makes no sense
+    if "ban_threshold" in rlo and "rate_limit_threshold" not in rlo:
+        results.append(
+            LintResult(
+                rule_id="GA432",
+                severity=Severity.ERROR,
+                message="ban_threshold requires rate_limit_threshold to be set",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.ban_threshold",
             )
         )
 
@@ -1260,3 +1976,39 @@ def _check_dead_rules(
                     ref=str(ref),
                 )
             )
+
+
+def validate_rule_count(
+    rules: list[dict],
+    *,
+    phase: str = "",
+    plan_tier: str = "enterprise",
+) -> list[LintResult]:
+    """GA502: check rule count against tier-specific limits.
+
+    Args:
+        rules: List of Cloud Armor rule dicts.
+        phase: Phase name (for reporting).
+        plan_tier: One of "standard", "plus", "enterprise". Defaults to
+            "enterprise" (most permissive).
+
+    Returns:
+        List of lint results (empty if within limits).
+    """
+    results: list[LintResult] = []
+    tier = plan_tier.lower()
+    limit = _TIER_RULE_LIMITS.get(tier)
+    if limit is None:
+        return results
+
+    count = len(rules)
+    if count > limit:
+        results.append(
+            LintResult(
+                rule_id="GA502",
+                severity=Severity.WARNING,
+                message=(f"Rule count ({count}) exceeds {tier} tier limit ({limit})"),
+                phase=phase,
+            )
+        )
+    return results

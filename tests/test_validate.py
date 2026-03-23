@@ -1061,9 +1061,92 @@ class TestRateLimitDeep:
         r = self._ban_rule(ban_duration_sec=120)
         assert "GA426" not in _ids(validate_rules([r]))
 
+    # --- GA427: ban_duration_sec exceeds maximum ---
+
+    def test_ga427_exceeds_max(self):
+        r = self._ban_rule(ban_duration_sec=3601)
+        assert "GA427" in _ids(validate_rules([r]))
+
+    def test_ga427_at_max(self):
+        r = self._ban_rule(ban_duration_sec=3600)
+        assert "GA427" not in _ids(validate_rules([r]))
+
+    def test_ga427_well_under_max(self):
+        r = self._ban_rule(ban_duration_sec=120)
+        assert "GA427" not in _ids(validate_rules([r]))
+
+    def test_ga427_way_over_max(self):
+        r = self._ban_rule(ban_duration_sec=86400)
+        assert "GA427" in _ids(validate_rules([r]))
+
+    def test_ga427_not_triggered_for_invalid_type(self):
+        """GA426 fires for non-int, GA427 should not also fire."""
+        r = self._ban_rule(ban_duration_sec="9999")
+        assert "GA426" in _ids(validate_rules([r]))
+        assert "GA427" not in _ids(validate_rules([r]))
+
+    def test_ga427_not_triggered_for_negative(self):
+        """GA426 fires for <= 0, GA427 should not also fire."""
+        r = self._ban_rule(ban_duration_sec=-1)
+        assert "GA426" in _ids(validate_rules([r]))
+        assert "GA427" not in _ids(validate_rules([r]))
+
+    # --- GA428: enforce_on_key_name content validation ---
+
+    def test_ga428_empty_name(self):
+        r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="")
+        assert "GA428" in _ids(validate_rules([r]))
+
+    def test_ga428_too_long(self):
+        r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X" * 129)
+        assert "GA428" in _ids(validate_rules([r]))
+
+    def test_ga428_at_max_length(self):
+        r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X" * 128)
+        assert "GA428" not in _ids(validate_rules([r]))
+
+    def test_ga428_control_chars(self):
+        r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Bad\x00")
+        assert "GA428" in _ids(validate_rules([r]))
+
+    def test_ga428_tab_control_char(self):
+        r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Bad\t")
+        assert "GA428" in _ids(validate_rules([r]))
+
+    def test_ga428_spaces(self):
+        r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X Bad Header")
+        assert "GA428" in _ids(validate_rules([r]))
+
+    def test_ga428_invalid_header_chars(self):
+        """RFC 7230: header names must be tchar only. Parentheses are not allowed."""
+        r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Bad(Header)")
+        assert "GA428" in _ids(validate_rules([r]))
+
+    def test_ga428_valid_header_name(self):
+        r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Custom-Header")
+        assert "GA428" not in _ids(validate_rules([r]))
+
+    def test_ga428_valid_cookie_name(self):
+        r = self._rl_rule(enforce_on_key="HTTP_COOKIE", enforce_on_key_name="session_id")
+        assert "GA428" not in _ids(validate_rules([r]))
+
+    def test_ga428_cookie_spaces_flagged(self):
+        r = self._rl_rule(enforce_on_key="HTTP_COOKIE", enforce_on_key_name="bad cookie")
+        assert "GA428" in _ids(validate_rules([r]))
+
+    def test_ga428_cookie_no_rfc7230_check(self):
+        """RFC 7230 header-name check only applies to HTTP_HEADER, not HTTP_COOKIE."""
+        r = self._rl_rule(enforce_on_key="HTTP_COOKIE", enforce_on_key_name="session(id)")
+        assert "GA428" not in _ids(validate_rules([r]))
+
+    def test_ga428_ip_key_not_checked(self):
+        """GA428 only applies to HTTP_HEADER/HTTP_COOKIE, not other key types."""
+        r = self._rl_rule(enforce_on_key="IP", enforce_on_key_name="anything")
+        assert "GA428" not in _ids(validate_rules([r]))
+
 
 # ---------------------------------------------------------------------------
-# GA429, GA431  Action parameter validation
+# GA429, GA431, GA432  Action parameter validation
 # ---------------------------------------------------------------------------
 
 
@@ -1140,6 +1223,69 @@ class TestActionParams:
             },
         )
         assert "GA431" not in _ids(validate_rules([r]))
+
+    # --- GA432: Conflicting rate-limit options ---
+
+    def test_ga432_exceed_redirect_options_without_redirect_action(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
+            },
+        )
+        assert "GA432" in _ids(validate_rules([r]))
+
+    def test_ga432_exceed_redirect_options_with_redirect_action_ok(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
+            },
+        )
+        assert "GA432" not in _ids(validate_rules([r]))
+
+    def test_ga432_ban_threshold_without_rate_limit_threshold(self):
+        r = _rule(
+            action="rate_based_ban",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "ban_threshold": {"count": 5, "interval_sec": 60},
+                "ban_duration_sec": 120,
+            },
+        )
+        assert "GA432" in _ids(validate_rules([r]))
+
+    def test_ga432_ban_threshold_with_rate_limit_threshold_ok(self):
+        r = _rule(
+            action="rate_based_ban",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "ban_threshold": {"count": 5, "interval_sec": 60},
+                "ban_duration_sec": 120,
+            },
+        )
+        assert "GA432" not in _ids(validate_rules([r]))
+
+    def test_ga432_no_exceed_redirect_options_no_error(self):
+        """Absence of exceed_redirect_options should not trigger GA432."""
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+            },
+        )
+        assert "GA432" not in _ids(validate_rules([r]))
 
 
 # ---------------------------------------------------------------------------
@@ -1504,6 +1650,7 @@ class TestEdgeCases:
         results = validate_rules([r])
         assert "GA429" not in _ids(results)
         assert "GA431" not in _ids(results)
+        assert "GA432" not in _ids(results)
 
     def test_ga310_no_crash_on_non_string_expression(self):
         """expression not a string should not crash the deep match check."""
@@ -1515,3 +1662,822 @@ class TestEdgeCases:
         match = {"expr": {"expression": None}}
         results = validate_rules([_rule(match=match)])
         assert "GA314" not in _ids(results)
+
+
+# ---------------------------------------------------------------------------
+# GA409  Redirect target must be valid URL for EXTERNAL_302
+# ---------------------------------------------------------------------------
+
+
+class TestGA409:
+    def test_ga409_external_302_invalid_url(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": "/relative/path"},
+        )
+        assert "GA409" in _ids(validate_rules([r]))
+
+    def test_ga409_external_302_ftp_url(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": "ftp://example.com"},
+        )
+        assert "GA409" in _ids(validate_rules([r]))
+
+    def test_ga409_external_302_https_ok(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": "https://example.com"},
+        )
+        assert "GA409" not in _ids(validate_rules([r]))
+
+    def test_ga409_external_302_http_ok(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": "http://example.com"},
+        )
+        assert "GA409" not in _ids(validate_rules([r]))
+
+    def test_ga409_recaptcha_no_target_check(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "GOOGLE_RECAPTCHA"},
+        )
+        assert "GA409" not in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA410  ban_threshold structure validation
+# ---------------------------------------------------------------------------
+
+
+class TestGA410:
+    def _ban_rule_with_bt(self, **bt_overrides):
+        bt = {"count": 5, "interval_sec": 60}
+        bt.update(bt_overrides)
+        return _rule(
+            action="rate_based_ban",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "ban_threshold": bt,
+                "ban_duration_sec": 120,
+            },
+        )
+
+    def test_ga410_valid_ban_threshold(self):
+        r = self._ban_rule_with_bt(count=5, interval_sec=60)
+        assert "GA410" not in _ids(validate_rules([r]))
+
+    def test_ga410_not_dict(self):
+        r = _rule(
+            action="rate_based_ban",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "ban_threshold": "invalid",
+                "ban_duration_sec": 120,
+            },
+        )
+        assert "GA410" in _ids(validate_rules([r]))
+
+    def test_ga410_missing_count(self):
+        r = _rule(
+            action="rate_based_ban",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "ban_threshold": {"interval_sec": 60},
+                "ban_duration_sec": 120,
+            },
+        )
+        results = validate_rules([r])
+        ga410 = [x for x in results if x.rule_id == "GA410"]
+        assert any("count" in x.message for x in ga410)
+
+    def test_ga410_count_zero(self):
+        r = self._ban_rule_with_bt(count=0)
+        assert "GA410" in _ids(validate_rules([r]))
+
+    def test_ga410_count_negative(self):
+        r = self._ban_rule_with_bt(count=-1)
+        assert "GA410" in _ids(validate_rules([r]))
+
+    def test_ga410_count_bool(self):
+        r = self._ban_rule_with_bt(count=True)
+        assert "GA410" in _ids(validate_rules([r]))
+
+    def test_ga410_invalid_interval(self):
+        r = self._ban_rule_with_bt(interval_sec=45)
+        assert "GA410" in _ids(validate_rules([r]))
+
+    def test_ga410_missing_interval(self):
+        r = _rule(
+            action="rate_based_ban",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "ban_threshold": {"count": 5},
+                "ban_duration_sec": 120,
+            },
+        )
+        results = validate_rules([r])
+        ga410 = [x for x in results if x.rule_id == "GA410"]
+        assert any("interval_sec" in x.message for x in ga410)
+
+
+# ---------------------------------------------------------------------------
+# GA411  exceed_redirect_options.type validation
+# ---------------------------------------------------------------------------
+
+
+class TestGA411:
+    def test_ga411_invalid_type(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "INVALID", "target": "https://x.com"},
+            },
+        )
+        assert "GA411" in _ids(validate_rules([r]))
+
+    def test_ga411_valid_external_302(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
+            },
+        )
+        assert "GA411" not in _ids(validate_rules([r]))
+
+    def test_ga411_valid_recaptcha(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "GOOGLE_RECAPTCHA"},
+            },
+        )
+        assert "GA411" not in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA412  exceed_redirect_options.target URL validation for EXTERNAL_302
+# ---------------------------------------------------------------------------
+
+
+class TestGA412:
+    def test_ga412_invalid_url(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "/relative"},
+            },
+        )
+        assert "GA412" in _ids(validate_rules([r]))
+
+    def test_ga412_valid_url(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
+            },
+        )
+        assert "GA412" not in _ids(validate_rules([r]))
+
+    def test_ga412_recaptcha_no_url_check(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "GOOGLE_RECAPTCHA"},
+            },
+        )
+        assert "GA412" not in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA413  Invalid regex pattern in CEL matches()
+# ---------------------------------------------------------------------------
+
+
+class TestGA413:
+    def test_ga413_invalid_regex(self):
+        match = {"expr": {"expression": "request.path.matches('[invalid')"}}
+        assert "GA413" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga413_valid_regex(self):
+        match = {"expr": {"expression": "request.path.matches('.*api.*')"}}
+        assert "GA413" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga413_multiple_matches_one_bad(self):
+        expr = "request.path.matches('.*api.*') && request.query.matches('[bad')"
+        match = {"expr": {"expression": expr}}
+        results = validate_rules([_rule(match=match)])
+        ga413 = [r for r in results if r.rule_id == "GA413"]
+        assert len(ga413) == 1
+
+    def test_ga413_no_matches_call(self):
+        match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
+        assert "GA413" not in _ids(validate_rules([_rule(match=match)]))
+
+
+# ---------------------------------------------------------------------------
+# GA414  enforce_on_key_configs structure validation
+# ---------------------------------------------------------------------------
+
+
+class TestGA414:
+    def _rl_rule_with_configs(self, configs, **extra):
+        rlo = {
+            "conform_action": "allow",
+            "exceed_action": "deny-429",
+            "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+            "enforce_on_key_configs": configs,
+        }
+        rlo.update(extra)
+        return _rule(action="throttle", rate_limit_options=rlo)
+
+    def test_ga414_valid_configs(self):
+        configs = [{"enforce_on_key_type": "IP"}]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA414" not in _ids(validate_rules([r]))
+
+    def test_ga414_not_list(self):
+        r = self._rl_rule_with_configs("invalid")
+        assert "GA414" in _ids(validate_rules([r]))
+
+    def test_ga414_too_many_entries(self):
+        configs = [
+            {"enforce_on_key_type": "IP"},
+            {"enforce_on_key_type": "HTTP_HEADER", "enforce_on_key_name": "X-A"},
+            {"enforce_on_key_type": "HTTP_COOKIE", "enforce_on_key_name": "c"},
+            {"enforce_on_key_type": "XFF_IP"},
+        ]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA414" in _ids(validate_rules([r]))
+
+    def test_ga414_entry_not_dict(self):
+        configs = ["invalid"]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA414" in _ids(validate_rules([r]))
+
+    def test_ga414_entry_missing_type(self):
+        configs = [{"enforce_on_key_name": "X-Foo"}]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA414" in _ids(validate_rules([r]))
+
+    def test_ga414_mutually_exclusive_with_enforce_on_key(self):
+        configs = [{"enforce_on_key_type": "IP"}]
+        r = self._rl_rule_with_configs(configs, enforce_on_key="IP")
+        assert "GA414" in _ids(validate_rules([r]))
+
+    def test_ga414_three_entries_ok(self):
+        configs = [
+            {"enforce_on_key_type": "IP"},
+            {"enforce_on_key_type": "HTTP_HEADER", "enforce_on_key_name": "X-A"},
+            {"enforce_on_key_type": "HTTP_COOKIE", "enforce_on_key_name": "c"},
+        ]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA414" not in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA415  Duplicate enforce_on_key_configs entries
+# ---------------------------------------------------------------------------
+
+
+class TestGA415:
+    def _rl_rule_with_configs(self, configs):
+        rlo = {
+            "conform_action": "allow",
+            "exceed_action": "deny-429",
+            "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+            "enforce_on_key_configs": configs,
+        }
+        return _rule(action="throttle", rate_limit_options=rlo)
+
+    def test_ga415_duplicate_type(self):
+        configs = [
+            {"enforce_on_key_type": "IP"},
+            {"enforce_on_key_type": "IP"},
+        ]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA415" in _ids(validate_rules([r]))
+
+    def test_ga415_no_duplicates(self):
+        configs = [
+            {"enforce_on_key_type": "IP"},
+            {"enforce_on_key_type": "XFF_IP"},
+        ]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA415" not in _ids(validate_rules([r]))
+
+    def test_ga415_single_entry_no_warning(self):
+        configs = [{"enforce_on_key_type": "IP"}]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA415" not in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA416  Preconfigured WAF sensitivity level 0-4
+# ---------------------------------------------------------------------------
+
+
+class TestGA416:
+    def test_ga416_sensitivity_too_high(self):
+        expr = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 5})"
+        match = {"expr": {"expression": expr}}
+        assert "GA416" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga416_sensitivity_valid_4(self):
+        expr = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 4})"
+        match = {"expr": {"expression": expr}}
+        assert "GA416" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga416_sensitivity_valid_0(self):
+        expr = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 0})"
+        match = {"expr": {"expression": expr}}
+        assert "GA416" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga416_no_sensitivity(self):
+        expr = "evaluatePreconfiguredWaf('sqli-v33-stable')"
+        match = {"expr": {"expression": expr}}
+        assert "GA416" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga416_preconfigured_expr_variant(self):
+        expr = "evaluatePreconfiguredExpr('xss-v33-stable', {'sensitivity': 9})"
+        match = {"expr": {"expression": expr}}
+        assert "GA416" in _ids(validate_rules([_rule(match=match)]))
+
+
+# ---------------------------------------------------------------------------
+# GA418  Invalid header name in CEL bracket access
+# ---------------------------------------------------------------------------
+
+
+class TestGA418:
+    def test_ga418_valid_header(self):
+        match = {"expr": {"expression": "request.headers['X-Custom-Header'] == 'v'"}}
+        assert "GA418" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga418_invalid_header_space(self):
+        match = {"expr": {"expression": 'request.headers["Bad Header"] == "v"'}}
+        assert "GA418" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga418_invalid_header_paren(self):
+        match = {"expr": {"expression": 'request.headers["X-Bad(Header)"] == "v"'}}
+        assert "GA418" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga418_deduped(self):
+        expr = 'request.headers["Bad Header"] == "a" || request.headers["Bad Header"] == "b"'
+        match = {"expr": {"expression": expr}}
+        results = validate_rules([_rule(match=match)])
+        ga418 = [r for r in results if r.rule_id == "GA418"]
+        assert len(ga418) == 1
+
+    def test_ga418_double_quoted(self):
+        match = {"expr": {"expression": 'request.headers["Content-Type"] == "text/html"'}}
+        assert "GA418" not in _ids(validate_rules([_rule(match=match)]))
+
+
+# ---------------------------------------------------------------------------
+# GA419  Empty or whitespace-only redirect target
+# ---------------------------------------------------------------------------
+
+
+class TestGA419:
+    def test_ga419_empty_redirect_target(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": ""},
+        )
+        assert "GA419" in _ids(validate_rules([r]))
+
+    def test_ga419_whitespace_redirect_target(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": "   "},
+        )
+        assert "GA419" in _ids(validate_rules([r]))
+
+    def test_ga419_non_empty_ok(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": "https://example.com"},
+        )
+        assert "GA419" not in _ids(validate_rules([r]))
+
+    def test_ga419_exceed_redirect_empty_target(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "EXTERNAL_302", "target": ""},
+            },
+        )
+        assert "GA419" in _ids(validate_rules([r]))
+
+    def test_ga419_exceed_redirect_whitespace_target(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "redirect",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "  "},
+            },
+        )
+        assert "GA419" in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA315  Country code validation in CEL
+# ---------------------------------------------------------------------------
+
+
+class TestGA315:
+    def test_ga315_valid_country_code(self):
+        match = {"expr": {"expression": "origin.region_code == 'US'"}}
+        assert "GA315" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga315_valid_country_code_double_quote(self):
+        match = {"expr": {"expression": 'origin.region_code == "DE"'}}
+        assert "GA315" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga315_lowercase_warning(self):
+        match = {"expr": {"expression": "origin.region_code == 'us'"}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 1
+        assert "uppercase" in ga315[0].message.lower()
+
+    def test_ga315_three_letter_code(self):
+        match = {"expr": {"expression": "origin.region_code == 'USA'"}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 1
+        assert "2 letters" in ga315[0].message
+
+    def test_ga315_single_letter_code(self):
+        match = {"expr": {"expression": "origin.region_code == 'U'"}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 1
+        assert "2 letters" in ga315[0].message
+
+    def test_ga315_in_list_all_valid(self):
+        match = {"expr": {"expression": 'origin.region_code in ["US", "CA", "GB"]'}}
+        assert "GA315" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga315_in_list_one_bad(self):
+        match = {"expr": {"expression": 'origin.region_code in ["US", "XYZ"]'}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 1
+
+    def test_ga315_mixed_case_in_list(self):
+        match = {"expr": {"expression": 'origin.region_code in ["us", "CA"]'}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 1
+        assert "uppercase" in ga315[0].message.lower()
+
+    def test_ga315_no_region_code_no_warning(self):
+        match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
+        assert "GA315" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga315_deduped(self):
+        match = {"expr": {"expression": "origin.region_code == 'us' || origin.region_code == 'us'"}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 1
+
+
+# ---------------------------------------------------------------------------
+# GA316  HTTP method validation in CEL
+# ---------------------------------------------------------------------------
+
+
+class TestGA316:
+    def test_ga316_valid_method(self):
+        match = {"expr": {"expression": "request.method == 'GET'"}}
+        assert "GA316" not in _ids(validate_rules([_rule(match=match)]))
+
+    @pytest.mark.parametrize(
+        "method",
+        ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT"],
+    )
+    def test_ga316_all_valid_methods(self, method):
+        match = {"expr": {"expression": f"request.method == '{method}'"}}
+        assert "GA316" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga316_typo_gett(self):
+        match = {"expr": {"expression": "request.method == 'GETT'"}}
+        results = validate_rules([_rule(match=match)])
+        ga316 = [r for r in results if r.rule_id == "GA316"]
+        assert len(ga316) == 1
+        assert "GET" in ga316[0].message
+
+    def test_ga316_unknown_method(self):
+        match = {"expr": {"expression": "request.method == 'PURGE'"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA316" in _ids(results)
+
+    def test_ga316_in_list_valid(self):
+        match = {"expr": {"expression": 'request.method in ["GET", "POST"]'}}
+        assert "GA316" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga316_in_list_one_bad(self):
+        match = {"expr": {"expression": 'request.method in ["GET", "POSTT"]'}}
+        results = validate_rules([_rule(match=match)])
+        ga316 = [r for r in results if r.rule_id == "GA316"]
+        assert len(ga316) == 1
+        assert "POST" in ga316[0].message
+
+    def test_ga316_deduped(self):
+        match = {"expr": {"expression": "request.method == 'GETT' || request.method == 'GETT'"}}
+        results = validate_rules([_rule(match=match)])
+        ga316 = [r for r in results if r.rule_id == "GA316"]
+        assert len(ga316) == 1
+
+    def test_ga316_no_method_comparison_no_warning(self):
+        match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
+        assert "GA316" not in _ids(validate_rules([_rule(match=match)]))
+
+
+# ---------------------------------------------------------------------------
+# GA317  CIDR validation in inIpRange()
+# ---------------------------------------------------------------------------
+
+
+class TestGA317:
+    def test_ga317_valid_cidr(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, '1.2.3.0/24')"}}
+        assert "GA317" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga317_valid_ipv6_cidr(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, '2001:db8::/32')"}}
+        assert "GA317" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga317_invalid_cidr(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, 'not-a-cidr')"}}
+        results = validate_rules([_rule(match=match)])
+        ga317 = [r for r in results if r.rule_id == "GA317"]
+        assert len(ga317) == 1
+
+    def test_ga317_invalid_cidr_bad_prefix(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, '1.2.3.4/99')"}}
+        results = validate_rules([_rule(match=match)])
+        ga317 = [r for r in results if r.rule_id == "GA317"]
+        assert len(ga317) == 1
+
+    def test_ga317b_private_range(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, '192.168.1.0/24')"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA317b" in _ids(results)
+
+    def test_ga317b_loopback(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, '127.0.0.1/32')"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA317b" in _ids(results)
+
+    def test_ga317b_rfc1918_10(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, '10.0.0.0/8')"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA317b" in _ids(results)
+
+    def test_ga317b_public_no_warning(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, '8.8.8.0/24')"}}
+        assert "GA317b" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga317b_ipv6_ula(self):
+        match = {"expr": {"expression": "inIpRange(origin.ip, 'fd00::/8')"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA317b" in _ids(results)
+
+    def test_ga317_double_quoted(self):
+        match = {"expr": {"expression": 'inIpRange(origin.ip, "8.8.8.0/24")'}}
+        assert "GA317" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga317_user_ip(self):
+        match = {"expr": {"expression": "inIpRange(origin.user_ip, '1.2.3.0/24')"}}
+        assert "GA317" not in _ids(validate_rules([_rule(match=match)]))
+
+
+# ---------------------------------------------------------------------------
+# GA318  CEL type mismatch detection
+# ---------------------------------------------------------------------------
+
+
+class TestGA318:
+    def test_ga318_string_field_with_int(self):
+        match = {"expr": {"expression": "origin.ip == 42"}}
+        results = validate_rules([_rule(match=match)])
+        ga318 = [r for r in results if r.rule_id == "GA318"]
+        assert len(ga318) == 1
+        assert "string" in ga318[0].message
+        assert "int" in ga318[0].message
+
+    def test_ga318_int_field_with_string(self):
+        match = {"expr": {"expression": "origin.asn == '15169'"}}
+        results = validate_rules([_rule(match=match)])
+        ga318 = [r for r in results if r.rule_id == "GA318"]
+        assert len(ga318) == 1
+        assert "int" in ga318[0].message
+        assert "string" in ga318[0].message
+
+    def test_ga318_string_field_with_string_ok(self):
+        match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
+        assert "GA318" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga318_int_field_with_int_ok(self):
+        match = {"expr": {"expression": "origin.asn == 15169"}}
+        assert "GA318" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga318_request_method_with_int(self):
+        match = {"expr": {"expression": "request.method == 42"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA318" in _ids(results)
+
+    def test_ga318_origin_region_code_with_int(self):
+        match = {"expr": {"expression": "origin.region_code == 42"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA318" in _ids(results)
+
+    def test_ga318_unknown_field_no_warning(self):
+        match = {"expr": {"expression": "custom.field == 42"}}
+        assert "GA318" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga318_deduped(self):
+        match = {"expr": {"expression": "origin.ip == 42 || origin.ip == 42"}}
+        results = validate_rules([_rule(match=match)])
+        ga318 = [r for r in results if r.rule_id == "GA318"]
+        assert len(ga318) == 1
+
+    def test_ga318_comparison_operators(self):
+        """origin.asn > 'string' is a type mismatch."""
+        match = {"expr": {"expression": "origin.asn > '100'"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA318" in _ids(results)
+
+    def test_ga318_request_path_with_int(self):
+        match = {"expr": {"expression": "request.path == 42"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA318" in _ids(results)
+
+
+# ---------------------------------------------------------------------------
+# GA319  Case sensitivity reminder
+# ---------------------------------------------------------------------------
+
+
+class TestGA319:
+    def test_ga319_mixed_case_path(self):
+        match = {"expr": {"expression": "request.path == '/Admin'"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA319" in _ids(results)
+
+    def test_ga319_all_lowercase_path_no_warning(self):
+        match = {"expr": {"expression": "request.path == '/admin'"}}
+        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga319_all_uppercase_path_no_warning(self):
+        match = {"expr": {"expression": "request.path == '/ADMIN'"}}
+        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga319_mixed_case_host(self):
+        match = {"expr": {"expression": "request.host == 'Example.COM'"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA319" in _ids(results)
+
+    def test_ga319_mixed_case_query(self):
+        match = {"expr": {"expression": "request.query == 'fooBar'"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA319" in _ids(results)
+
+    def test_ga319_method_no_warning(self):
+        """request.method is always uppercase — don't warn."""
+        match = {"expr": {"expression": "request.method == 'Get'"}}
+        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga319_region_code_no_warning(self):
+        """origin.region_code is always uppercase — don't warn."""
+        match = {"expr": {"expression": "origin.region_code == 'Us'"}}
+        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga319_severity_is_info(self):
+        from octorules.linter.engine import Severity
+
+        match = {"expr": {"expression": "request.path == '/Admin'"}}
+        results = validate_rules([_rule(match=match)])
+        ga319 = [r for r in results if r.rule_id == "GA319"]
+        assert ga319[0].severity == Severity.INFO
+
+    def test_ga319_deduped(self):
+        match = {"expr": {"expression": "request.path == '/Admin' || request.path == '/Admin'"}}
+        results = validate_rules([_rule(match=match)])
+        ga319 = [r for r in results if r.rule_id == "GA319"]
+        assert len(ga319) == 1
+
+    def test_ga319_slash_only_no_warning(self):
+        """All-lowercase path should not trigger."""
+        match = {"expr": {"expression": "request.path == '/'"}}
+        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+
+
+# ---------------------------------------------------------------------------
+# GA502  Tier-aware rule count limits
+# ---------------------------------------------------------------------------
+
+
+class TestGA502:
+    def test_ga502_standard_under_limit(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(256)]
+        assert "GA502" not in _ids(validate_rule_count(rules, plan_tier="standard"))
+
+    def test_ga502_standard_over_limit(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(257)]
+        results = validate_rule_count(rules, plan_tier="standard")
+        assert "GA502" in _ids(results)
+        assert "257" in results[0].message
+        assert "256" in results[0].message
+
+    def test_ga502_plus_over_limit(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(513)]
+        results = validate_rule_count(rules, plan_tier="plus")
+        assert "GA502" in _ids(results)
+
+    def test_ga502_plus_at_limit(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(512)]
+        assert "GA502" not in _ids(validate_rule_count(rules, plan_tier="plus"))
+
+    def test_ga502_enterprise_over_limit(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(1025)]
+        results = validate_rule_count(rules, plan_tier="enterprise")
+        assert "GA502" in _ids(results)
+
+    def test_ga502_enterprise_at_limit(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(1024)]
+        assert "GA502" not in _ids(validate_rule_count(rules, plan_tier="enterprise"))
+
+    def test_ga502_enterprise_default(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(100)]
+        assert "GA502" not in _ids(validate_rule_count(rules))
+
+    def test_ga502_unknown_tier_no_crash(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(2000)]
+        assert "GA502" not in _ids(validate_rule_count(rules, plan_tier="unknown"))
+
+    def test_ga502_case_insensitive_tier(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(257)]
+        assert "GA502" in _ids(validate_rule_count(rules, plan_tier="Standard"))
+
+    def test_ga502_phase_passed_through(self):
+        from octorules_google.validate import validate_rule_count
+
+        rules = [_rule(ref=str(i)) for i in range(257)]
+        results = validate_rule_count(
+            rules, plan_tier="standard", phase="gcloud_armor_custom_rules"
+        )
+        assert results[0].phase == "gcloud_armor_custom_rules"

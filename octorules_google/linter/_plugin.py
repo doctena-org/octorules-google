@@ -8,7 +8,7 @@ from octorules.linter.engine import LintContext
 from octorules.phases import PHASE_BY_NAME
 
 from octorules_google.linter._rules import GA_RULE_METAS
-from octorules_google.validate import validate_rules
+from octorules_google.validate import validate_rule_count, validate_rules
 
 # Phase names owned by this provider.
 _GCLOUD_PHASE_NAMES = frozenset(
@@ -37,4 +37,8 @@ def google_lint(rules_data: dict[str, Any], ctx: LintContext) -> None:
 
         results = validate_rules(rules, phase=phase_name)
         for result in results:
+            ctx.add(result)
+
+        tier_results = validate_rule_count(rules, phase=phase_name, plan_tier=ctx.plan_tier)
+        for result in tier_results:
             ctx.add(result)

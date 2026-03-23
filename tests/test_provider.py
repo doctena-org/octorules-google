@@ -315,6 +315,117 @@ class TestExceptionWrapping:
             provider.resolve_zone_id("my-policy")
 
 
+class TestAuthErrors:
+    """Auth-related errors during get_phase_rules are wrapped as ProviderAuthError."""
+
+    def _setup_provider(self, mock_armor_client, security_policy):
+        mock_armor_client.get.return_value = security_policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+        return provider
+
+    def test_get_phase_rules_unauthorized(self, mock_armor_client, security_policy):
+        """Unauthorized during get_phase_rules → ProviderAuthError."""
+        provider = self._setup_provider(mock_armor_client, security_policy)
+        mock_armor_client.get.side_effect = Unauthorized("unauthorized")
+        with pytest.raises(ProviderAuthError, match="unauthorized"):
+            provider.get_phase_rules(_zs(), "gcloud_armor_custom")
+
+    def test_get_phase_rules_forbidden(self, mock_armor_client, security_policy):
+        """Forbidden during get_phase_rules → ProviderAuthError."""
+        provider = self._setup_provider(mock_armor_client, security_policy)
+        mock_armor_client.get.side_effect = Forbidden("forbidden")
+        with pytest.raises(ProviderAuthError, match="forbidden"):
+            provider.get_phase_rules(_zs(), "gcloud_armor_custom")
+
+    def test_default_credentials_error(self, mock_armor_client, security_policy):
+        """DefaultCredentialsError during get_phase_rules → ProviderAuthError."""
+        provider = self._setup_provider(mock_armor_client, security_policy)
+        mock_armor_client.get.side_effect = DefaultCredentialsError("no creds")
+        with pytest.raises(ProviderAuthError, match="no creds"):
+            provider.get_phase_rules(_zs(), "gcloud_armor_custom")
+
+
+class TestConnectionErrors:
+    """Connection-related errors are wrapped as ProviderConnectionError."""
+
+    def _setup_provider(self, mock_armor_client, security_policy):
+        mock_armor_client.get.return_value = security_policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+        return provider
+
+    def test_connection_error(self, mock_armor_client, security_policy):
+        """ConnectionError during get_phase_rules → ProviderConnectionError."""
+        provider = self._setup_provider(mock_armor_client, security_policy)
+        mock_armor_client.get.side_effect = ConnectionError("connection refused")
+        with pytest.raises(ProviderConnectionError, match="connection refused"):
+            provider.get_phase_rules(_zs(), "gcloud_armor_custom")
+
+    def test_os_error(self, mock_armor_client, security_policy):
+        """OSError during get_phase_rules → ProviderConnectionError."""
+        provider = self._setup_provider(mock_armor_client, security_policy)
+        mock_armor_client.get.side_effect = OSError("network unreachable")
+        with pytest.raises(ProviderConnectionError, match="network unreachable"):
+            provider.get_phase_rules(_zs(), "gcloud_armor_custom")
+
+
+class TestGenericErrors:
+    """Non-auth GoogleAPIError is wrapped as ProviderError (not ProviderAuthError)."""
+
+    def _setup_provider(self, mock_armor_client, security_policy):
+        mock_armor_client.get.return_value = security_policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+        return provider
+
+    def test_google_api_error(self, mock_armor_client, security_policy):
+        """GoogleAPIError during get_phase_rules → ProviderError, not ProviderAuthError."""
+        provider = self._setup_provider(mock_armor_client, security_policy)
+        mock_armor_client.get.side_effect = GoogleAPIError("server error")
+        with pytest.raises(ProviderError, match="server error") as exc_info:
+            provider.get_phase_rules(_zs(), "gcloud_armor_custom")
+        # Must NOT be a ProviderAuthError subclass
+        assert type(exc_info.value) is ProviderError
+
+
+class TestPartialFailure:
+    """Partial failure during put_phase_rules: early changes persist."""
+
+    def test_put_phase_rules_partial_failure(self, mock_armor_client, security_policy):
+        """First rule patches OK, second add fails → ProviderError, first change persists."""
+        mock_armor_client.get.return_value = security_policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+
+        # Keep priority 100 (patch) and add priority 500 (add).
+        new_rules = [
+            {
+                "ref": "100",
+                "action": "deny(502)",
+                "match": {"expr": {"expression": "origin.region_code == 'XX'"}},
+                "description": "Updated custom rule",
+            },
+            {
+                "ref": "500",
+                "action": "deny(403)",
+                "match": {"expr": {"expression": "true"}},
+                "description": "New rule that will fail",
+            },
+        ]
+
+        # patch_rule succeeds for priority 100, add_rule fails for priority 500
+        mock_armor_client.patch_rule.return_value = None
+        mock_armor_client.add_rule.side_effect = GoogleAPIError("quota exceeded")
+
+        with pytest.raises(ProviderError, match="quota exceeded"):
+            provider.put_phase_rules(_zs(), "gcloud_armor_custom", new_rules)
+
+        # The patch for priority 100 already went through before the add failed
+        mock_armor_client.patch_rule.assert_called_once()
+        assert mock_armor_client.patch_rule.call_args[1]["priority"] == 100
+
+
 class TestRuleClassification:
     def test_deny_is_custom(self):
         from octorules_google.provider import _classify_phase
@@ -455,3 +566,119 @@ class TestPhaseRegistration:
 
         redirect_phase = get_phase("gcloud_armor_redirect_rules")
         assert redirect_phase.provider_id == "gcloud_armor_redirect"
+
+
+class TestMalformedResponses:
+    """Provider handles malformed or incomplete API responses gracefully."""
+
+    def _setup(self, mock_armor_client, policy):
+        mock_armor_client.get.return_value = policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+        return provider
+
+    def test_get_phase_rules_empty_rules(self, mock_armor_client):
+        """Provider handles policy with no rules."""
+        policy = {"name": "empty", "rules": []}
+        provider = self._setup(mock_armor_client, policy)
+        assert provider.get_phase_rules(_zs(zone_id="empty"), "gcloud_armor_custom") == []
+        assert provider.get_phase_rules(_zs(zone_id="empty"), "gcloud_armor_rate") == []
+        assert provider.get_phase_rules(_zs(zone_id="empty"), "gcloud_armor_preconfigured") == []
+        assert provider.get_phase_rules(_zs(zone_id="empty"), "gcloud_armor_redirect") == []
+
+    def test_get_phase_rules_missing_rules_key(self, mock_armor_client):
+        """Provider handles policy with no rules key at all."""
+        policy = {"name": "no-rules"}
+        provider = self._setup(mock_armor_client, policy)
+        assert provider.get_phase_rules(_zs(zone_id="no-rules"), "gcloud_armor_custom") == []
+
+    def test_get_phase_rules_rule_missing_priority(self, mock_armor_client):
+        """Rules without priority don't crash."""
+        policy = {
+            "name": "bad-rules",
+            "rules": [
+                {
+                    # No "priority" key
+                    "action": "deny(403)",
+                    "match": {"config": {"src_ip_ranges": ["10.0.0.0/8"]}},
+                    "description": "Rule with no priority",
+                },
+            ],
+        }
+        provider = self._setup(mock_armor_client, policy)
+        # Missing priority means _get_rules filter (r.get("priority") != DEFAULT)
+        # passes, and _normalize_rule uses .pop("priority", "") -> ref = ""
+        rules = provider.get_phase_rules(_zs(zone_id="bad-rules"), "gcloud_armor_custom")
+        assert len(rules) == 1
+        assert rules[0]["ref"] == ""
+
+    def test_get_phase_rules_rule_missing_action(self, mock_armor_client):
+        """Rules without action classify as custom and don't crash."""
+        policy = {
+            "name": "no-action",
+            "rules": [
+                {
+                    "priority": 100,
+                    # No "action" key
+                    "match": {"config": {"src_ip_ranges": ["10.0.0.0/8"]}},
+                    "description": "Rule with no action",
+                },
+            ],
+        }
+        provider = self._setup(mock_armor_client, policy)
+        # Missing action -> _classify_phase returns "gcloud_armor_custom"
+        rules = provider.get_phase_rules(_zs(zone_id="no-action"), "gcloud_armor_custom")
+        assert len(rules) == 1
+        assert rules[0]["ref"] == "100"
+
+    def test_get_phase_rules_rule_missing_match(self, mock_armor_client):
+        """Rules without match field don't crash classification."""
+        policy = {
+            "name": "no-match",
+            "rules": [
+                {
+                    "priority": 100,
+                    "action": "deny(403)",
+                    # No "match" key
+                    "description": "Rule with no match",
+                },
+            ],
+        }
+        provider = self._setup(mock_armor_client, policy)
+        rules = provider.get_phase_rules(_zs(zone_id="no-match"), "gcloud_armor_custom")
+        assert len(rules) == 1
+        assert rules[0]["ref"] == "100"
+
+    def test_get_all_phase_rules_empty_policy(self, mock_armor_client):
+        """get_all_phase_rules returns empty result for policy with no rules."""
+        policy = {"name": "empty", "rules": []}
+        provider = self._setup(mock_armor_client, policy)
+        result = provider.get_all_phase_rules(_zs(zone_id="empty"))
+        assert dict(result) == {}
+        assert result.failed_phases == []
+
+    def test_get_all_phase_rules_missing_rules_key(self, mock_armor_client):
+        """get_all_phase_rules handles policy with no rules key."""
+        policy = {"name": "no-rules"}
+        provider = self._setup(mock_armor_client, policy)
+        result = provider.get_all_phase_rules(_zs(zone_id="no-rules"))
+        assert dict(result) == {}
+        assert result.failed_phases == []
+
+    def test_only_default_rule_returns_empty(self, mock_armor_client):
+        """Policy with only the default rule (priority 2147483647) returns empty."""
+        policy = {
+            "name": "default-only",
+            "rules": [
+                {
+                    "priority": 2147483647,
+                    "action": "allow",
+                    "match": {"config": {"src_ip_ranges": ["*"]}},
+                    "description": "Default rule",
+                },
+            ],
+        }
+        provider = self._setup(mock_armor_client, policy)
+        assert provider.get_phase_rules(_zs(zone_id="default-only"), "gcloud_armor_custom") == []
+        result = provider.get_all_phase_rules(_zs(zone_id="default-only"))
+        assert dict(result) == {}

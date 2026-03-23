@@ -108,6 +108,15 @@ GA425 = RuleMeta(
 GA426 = RuleMeta(
     "GA426", "rate_limit", "Invalid ban_duration_sec (must be positive integer)", Severity.ERROR
 )
+GA427 = RuleMeta(
+    "GA427", "rate_limit", "ban_duration_sec exceeds maximum (3600 seconds)", Severity.ERROR
+)
+GA428 = RuleMeta(
+    "GA428",
+    "rate_limit",
+    "Invalid enforce_on_key_name value",
+    Severity.WARNING,
+)
 
 # GA4xx continued — Action parameter validation
 GA429 = RuleMeta(
@@ -122,11 +131,103 @@ GA431 = RuleMeta(
     "redirect exceed_action requires exceed_redirect_options",
     Severity.ERROR,
 )
+GA432 = RuleMeta(
+    "GA432",
+    "rate_limit",
+    "Conflicting rate-limit options",
+    Severity.ERROR,
+)
+
+# GA4xx continued — Redirect target, ban_threshold, exceed_redirect, enforce_on_key_configs
+GA409 = RuleMeta(
+    "GA409",
+    "redirect",
+    "redirect_options.target must be a valid URL for EXTERNAL_302",
+    Severity.ERROR,
+)
+GA410 = RuleMeta(
+    "GA410",
+    "rate_limit",
+    "Invalid ban_threshold structure",
+    Severity.ERROR,
+)
+GA411 = RuleMeta(
+    "GA411",
+    "rate_limit",
+    "Invalid exceed_redirect_options.type",
+    Severity.ERROR,
+)
+GA412 = RuleMeta(
+    "GA412",
+    "rate_limit",
+    "exceed_redirect_options.target must be a valid URL for EXTERNAL_302",
+    Severity.ERROR,
+)
+GA413 = RuleMeta(
+    "GA413",
+    "match",
+    "Invalid regex pattern in matches()",
+    Severity.WARNING,
+)
+GA414 = RuleMeta(
+    "GA414",
+    "rate_limit",
+    "Invalid enforce_on_key_configs structure",
+    Severity.ERROR,
+)
+GA415 = RuleMeta(
+    "GA415",
+    "rate_limit",
+    "Duplicate enforce_on_key_type in enforce_on_key_configs",
+    Severity.WARNING,
+)
+GA416 = RuleMeta(
+    "GA416",
+    "match",
+    "Preconfigured WAF sensitivity level must be 0-4",
+    Severity.WARNING,
+)
+GA418 = RuleMeta(
+    "GA418",
+    "match",
+    "Invalid HTTP header name in CEL expression",
+    Severity.WARNING,
+)
+GA419 = RuleMeta(
+    "GA419",
+    "redirect",
+    "Redirect target must not be empty",
+    Severity.ERROR,
+)
+
+# GA3xx continued — CEL deep analysis
+GA315 = RuleMeta(
+    "GA315",
+    "match",
+    "Unknown country code in origin.region_code comparison",
+    Severity.WARNING,
+)
+GA316 = RuleMeta(
+    "GA316",
+    "match",
+    "Unknown HTTP method in request.method comparison",
+    Severity.WARNING,
+)
+GA317 = RuleMeta("GA317", "match", "Invalid CIDR in inIpRange()", Severity.ERROR)
+GA317b = RuleMeta("GA317b", "match", "Private/reserved IP range in inIpRange()", Severity.WARNING)
+GA318 = RuleMeta("GA318", "match", "CEL type mismatch", Severity.WARNING)
+GA319 = RuleMeta(
+    "GA319",
+    "match",
+    "Case-sensitive string comparison may need case-insensitive matching",
+    Severity.INFO,
+)
 
 # Category GA5xx — Description & IP range checks
 GA500 = RuleMeta(
     "GA500", "description", "Description exceeds 1024 character limit", Severity.WARNING
 )
+GA502 = RuleMeta("GA502", "cross_rule", "Rule count exceeds tier limit", Severity.WARNING)
 GA503 = RuleMeta("GA503", "match", "Private/reserved IP range in src_ip_ranges", Severity.WARNING)
 
 # Category GA6xx — Best-practice / operational checks
