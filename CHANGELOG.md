@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-23
+
 ### Added
 - **GA315** (WARNING): Unknown country code in `origin.region_code` comparisons
   (must be exactly 2 uppercase letters).
