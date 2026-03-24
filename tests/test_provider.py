@@ -682,3 +682,181 @@ class TestMalformedResponses:
         assert provider.get_phase_rules(_zs(zone_id="default-only"), "gcloud_armor_custom") == []
         result = provider.get_all_phase_rules(_zs(zone_id="default-only"))
         assert dict(result) == {}
+
+
+class TestConcurrentWorkers:
+    """Tests for concurrent/parallel usage with max_workers > 1."""
+
+    def _make_policy(self, name):
+        """Create a security policy with one custom rule."""
+        return {
+            "name": name,
+            "id": f"id-{name}",
+            "rules": [
+                {
+                    "priority": 100,
+                    "action": "deny(403)",
+                    "match": {
+                        "config": {"src_ip_ranges": ["1.2.3.0/24"]},
+                        "versioned_expr": "SRC_IPS_V1",
+                    },
+                    "description": f"Block for {name}",
+                    "preview": False,
+                },
+                {
+                    "priority": 2147483647,
+                    "action": "allow",
+                    "match": {"config": {"src_ip_ranges": ["*"]}},
+                    "description": "Default rule",
+                },
+            ],
+        }
+
+    def test_concurrent_get_phase_rules_success(self, mock_armor_client):
+        """Multiple concurrent get_phase_rules calls all return correct results."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        policy_names = ["policy-a", "policy-b", "policy-c"]
+        policies = {name: self._make_policy(name) for name in policy_names}
+
+        def mock_get(**kwargs):
+            name = kwargs.get("security_policy", "")
+            return policies[name]
+
+        mock_armor_client.get.side_effect = mock_get
+        provider = CloudArmorProvider(client=mock_armor_client, project="p", max_workers=3)
+        # Resolve all zones first
+        for name in policy_names:
+            provider.resolve_zone_id(name)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(
+                    provider.get_phase_rules,
+                    _zs(zone_id=name),
+                    "gcloud_armor_custom",
+                ): name
+                for name in policy_names
+            }
+            results = {}
+            for future in as_completed(futures):
+                name = futures[future]
+                results[name] = future.result()
+
+        # All three policies got results
+        assert len(results) == 3
+        for name in policy_names:
+            assert len(results[name]) == 1
+            assert results[name][0]["ref"] == "100"
+
+    def test_concurrent_partial_failure(self, mock_armor_client):
+        """Some zones succeed while others raise ProviderError."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        policy_names = ["policy-a", "policy-b", "policy-c"]
+        policies = {name: self._make_policy(name) for name in policy_names}
+
+        def mock_get(**kwargs):
+            name = kwargs.get("security_policy", "")
+            if name == "policy-b":
+                raise GoogleAPIError("quota exceeded")
+            return policies[name]
+
+        mock_armor_client.get.side_effect = mock_get
+        provider = CloudArmorProvider(client=mock_armor_client, project="p", max_workers=3)
+        # Resolve all first (before the error side_effect kicks in)
+        mock_armor_client.get.side_effect = lambda **kw: policies[kw["security_policy"]]
+        for name in policy_names:
+            provider.resolve_zone_id(name)
+        # Now set the failing side_effect
+        mock_armor_client.get.side_effect = mock_get
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(
+                    provider.get_phase_rules,
+                    _zs(zone_id=name),
+                    "gcloud_armor_custom",
+                ): name
+                for name in policy_names
+            }
+            results = {}
+            errors = {}
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    results[name] = future.result()
+                except ProviderError as e:
+                    errors[name] = e
+
+        # policy-a and policy-c succeed, policy-b fails
+        assert "policy-a" in results
+        assert "policy-c" in results
+        assert "policy-b" in errors
+        assert len(results) == 2
+        assert len(errors) == 1
+
+    def test_concurrent_auth_error_propagates(self, mock_armor_client):
+        """ProviderAuthError propagates from concurrent execution."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        policy_names = ["policy-a", "policy-b", "policy-c"]
+        policies = {name: self._make_policy(name) for name in policy_names}
+
+        # Resolve all first
+        mock_armor_client.get.side_effect = lambda **kw: policies[kw["security_policy"]]
+        provider = CloudArmorProvider(client=mock_armor_client, project="p", max_workers=3)
+        for name in policy_names:
+            provider.resolve_zone_id(name)
+
+        # Now set auth error for policy-a
+        def mock_get(**kwargs):
+            name = kwargs.get("security_policy", "")
+            if name == "policy-a":
+                raise Forbidden("forbidden")
+            return policies[name]
+
+        mock_armor_client.get.side_effect = mock_get
+
+        auth_errors = []
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(
+                    provider.get_phase_rules,
+                    _zs(zone_id=name),
+                    "gcloud_armor_custom",
+                ): name
+                for name in policy_names
+            }
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except ProviderAuthError as e:
+                    auth_errors.append(e)
+
+        # At least one ProviderAuthError surfaced
+        assert len(auth_errors) >= 1
+
+    def test_concurrent_resolve_zone_id(self, mock_armor_client):
+        """Concurrent resolve_zone_id calls all succeed."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        policy_names = [f"policy-{i}" for i in range(10)]
+        policies = {name: self._make_policy(name) for name in policy_names}
+
+        mock_armor_client.get.side_effect = lambda **kw: policies[kw["security_policy"]]
+        provider = CloudArmorProvider(client=mock_armor_client, project="p", max_workers=4)
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(provider.resolve_zone_id, name): name for name in policy_names
+            }
+            results = {}
+            for future in as_completed(futures):
+                name = futures[future]
+                results[name] = future.result()
+
+        # All 10 policies resolved (Cloud Armor uses name as ID)
+        assert len(results) == 10
+        for name in policy_names:
+            assert results[name] == name

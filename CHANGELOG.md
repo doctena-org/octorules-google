@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-24
+
+### Added
+- `TestConcurrentWorkers` tests: concurrent `get_phase_rules` success, partial
+  failure, auth error propagation, and stateless concurrent zone resolution.
+
 ## [0.4.0] - 2026-03-23
 
 ### Added
