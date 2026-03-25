@@ -7,18 +7,12 @@ from typing import Any
 from octorules.linter.engine import LintContext
 from octorules.phases import PHASE_BY_NAME
 
+from octorules_google import GCLOUD_PHASE_NAMES
 from octorules_google.linter._rules import GA_RULE_METAS
 from octorules_google.validate import validate_rule_count, validate_rules
 
-# Phase names owned by this provider.
-_GCLOUD_PHASE_NAMES = frozenset(
-    {
-        "gcloud_armor_custom_rules",
-        "gcloud_armor_rate_rules",
-        "gcloud_armor_preconfigured_rules",
-        "gcloud_armor_redirect_rules",
-    }
-)
+# Re-export for backward compatibility
+_GCLOUD_PHASE_NAMES = GCLOUD_PHASE_NAMES
 
 GA_RULE_IDS: frozenset[str] = frozenset(r.rule_id for r in GA_RULE_METAS)
 
