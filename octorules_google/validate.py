@@ -9,6 +9,37 @@ import re
 import celpy
 from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
 
+
+def _parse_priority(ref: str) -> int | None:
+    """Parse a rule ref as an integer priority, returning None on failure."""
+    try:
+        return int(ref)
+    except (ValueError, TypeError):
+        return None
+
+
+def _result(
+    rule_id: str,
+    severity: Severity,
+    message: str,
+    phase: str,
+    ref: str = "",
+    *,
+    field: str = "",
+    suggestion: str = "",
+) -> LintResult:
+    """Create a LintResult with common defaults."""
+    return LintResult(
+        rule_id=rule_id,
+        severity=severity,
+        message=message,
+        phase=phase,
+        ref=ref,
+        field=field,
+        suggestion=suggestion,
+    )
+
+
 _BASE_ACTIONS = frozenset({"allow", "throttle", "rate_based_ban", "redirect"})
 _DENY_STATUSES = frozenset({403, 404, 502})
 _DENY_RE = re.compile(r"^deny\((\d+)\)$")
@@ -231,7 +262,7 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
         ref = rule.get("ref", "")
         if not ref:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA001",
                     severity=Severity.ERROR,
                     message="Rule missing 'ref'",
@@ -270,11 +301,10 @@ def _check_priority(
 ) -> None:
     if not ref:
         return
-    try:
-        pri = int(ref)
-    except (ValueError, TypeError):
+    pri = _parse_priority(ref)
+    if pri is None:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA100",
                 severity=Severity.ERROR,
                 message=f"ref must be a non-negative integer string, got {ref!r}",
@@ -286,7 +316,7 @@ def _check_priority(
         return
     if pri < 0:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA100",
                 severity=Severity.ERROR,
                 message=f"ref must be a non-negative integer string, got {ref!r}",
@@ -298,7 +328,7 @@ def _check_priority(
         return
     if pri > _MAX_PRIORITY:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA101",
                 severity=Severity.ERROR,
                 message=f"Priority {pri} out of range (0\u2013{_MAX_PRIORITY})",
@@ -316,7 +346,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
     action = rule.get("action", "")
     if not action:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA002",
                 severity=Severity.ERROR,
                 message="Rule missing 'action'",
@@ -332,7 +362,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
         status = int(m.group(1))
         if status not in _DENY_STATUSES:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA201",
                     severity=Severity.ERROR,
                     message=f"Invalid deny status: {status}",
@@ -344,7 +374,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
             )
     elif action not in _BASE_ACTIONS:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA200",
                 severity=Severity.ERROR,
                 message=f"Invalid action: {action!r}",
@@ -362,7 +392,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
     if action in ("throttle", "rate_based_ban"):
         if "rate_limit_options" not in rule:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA400",
                     severity=Severity.ERROR,
                     message=f"Action '{action}' requires 'rate_limit_options'",
@@ -378,7 +408,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
     if action == "redirect":
         if "redirect_options" not in rule:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA401",
                     severity=Severity.ERROR,
                     message="Action 'redirect' requires 'redirect_options'",
@@ -406,7 +436,7 @@ def _check_rate_limit_options(
     for field in ("conform_action", "exceed_action", "rate_limit_threshold"):
         if field not in rlo:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA403",
                     severity=Severity.ERROR,
                     message=f"rate_limit_options missing required field '{field}'",
@@ -420,7 +450,7 @@ def _check_rate_limit_options(
     ca = rlo.get("conform_action")
     if ca is not None and ca != "allow":
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA405",
                 severity=Severity.ERROR,
                 message=f"conform_action must be 'allow', got {ca!r}",
@@ -434,7 +464,7 @@ def _check_rate_limit_options(
     ea = rlo.get("exceed_action")
     if ea is not None and ea not in _VALID_EXCEED_ACTIONS:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA406",
                 severity=Severity.ERROR,
                 message=f"Invalid exceed_action: {ea!r}",
@@ -451,7 +481,7 @@ def _check_rate_limit_options(
         interval = rlt.get("interval_sec")
         if interval is not None and interval not in _VALID_INTERVALS:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA407",
                     severity=Severity.ERROR,
                     message=f"Invalid interval_sec: {interval!r}",
@@ -468,7 +498,7 @@ def _check_rate_limit_options(
             bad = not isinstance(count, int) or isinstance(count, bool)
             if bad or count < 1 or count > max_count:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA408",
                         severity=Severity.ERROR,
                         message=(
@@ -494,7 +524,7 @@ def _check_redirect_options(
     rtype = redir.get("type", "")
     if rtype and rtype not in _VALID_REDIRECT_TYPES:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA402",
                 severity=Severity.ERROR,
                 message=f"Invalid redirect type: {rtype!r}",
@@ -506,7 +536,7 @@ def _check_redirect_options(
         )
     if rtype == "EXTERNAL_302" and "target" not in redir:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA404",
                 severity=Severity.ERROR,
                 message="EXTERNAL_302 redirect requires 'target' URL",
@@ -520,7 +550,7 @@ def _check_redirect_options(
     target = redir.get("target")
     if target is not None and isinstance(target, str) and not target.strip():
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA419",
                 severity=Severity.ERROR,
                 message="redirect target must not be empty",
@@ -535,7 +565,7 @@ def _check_redirect_options(
     if rtype == "EXTERNAL_302" and target is not None and isinstance(target, str):
         if not target.startswith(("http://", "https://")):
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA409",
                     severity=Severity.ERROR,
                     message=(
@@ -561,7 +591,7 @@ def _check_match(
     match = rule.get("match")
     if match is None:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA003",
                 severity=Severity.ERROR,
                 message="Rule missing 'match'",
@@ -579,7 +609,7 @@ def _check_match(
     # GA300: must have expr OR config+versioned_expr, not both / neither
     if has_expr and has_config:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA300",
                 severity=Severity.ERROR,
                 message="Match must have 'expr' or 'config'+'versioned_expr', not both",
@@ -590,7 +620,7 @@ def _check_match(
         )
     elif not has_expr and not has_config:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA300",
                 severity=Severity.ERROR,
                 message="Match must have 'expr' or 'config'+'versioned_expr'",
@@ -640,7 +670,7 @@ def _check_cidrs(
             net = ipaddress.ip_network(cidr, strict=False)
         except ValueError:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA301",
                     severity=Severity.WARNING,
                     message=f"Invalid CIDR: {cidr!r}",
@@ -656,7 +686,7 @@ def _check_cidrs(
         # GA306: /0 matches all traffic
         if net.prefixlen == 0:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA306",
                     severity=Severity.WARNING,
                     message=f"/{0} CIDR matches all traffic: {cidr}",
@@ -670,7 +700,7 @@ def _check_cidrs(
         for private in _PRIVATE_SUPERNETS:
             if net.version == private.version and net.subnet_of(private):
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA503",
                         severity=Severity.WARNING,
                         message=f"Private/reserved IP range: {cidr}",
@@ -694,7 +724,7 @@ def _check_cidrs(
                 else:
                     msg = f"Redundant: {cidr_a} contained in {cidr_b}"
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA305",
                         severity=Severity.WARNING,
                         message=msg,
@@ -714,7 +744,7 @@ def _check_cel_length(
     """GA304: CEL expression length check."""
     if len(expr) > _MAX_EXPRESSION:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA304",
                 severity=Severity.WARNING,
                 message=f"CEL expression exceeds {_MAX_EXPRESSION} characters ({len(expr)})",
@@ -732,7 +762,7 @@ def _check_cel(expr: str, results: list[LintResult], phase: str, ref: str) -> No
         env.compile(expr)
     except celpy.CELParseError as exc:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA302",
                 severity=Severity.WARNING,
                 message=f"CEL syntax error: {exc}",
@@ -755,7 +785,7 @@ def _check_preconfigured(
         prefix = ruleset.split("-")[0].lower()
         if prefix not in _KNOWN_WAF_RULE_SETS:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA303",
                     severity=Severity.WARNING,
                     message=f"Unknown preconfigured WAF rule set: {ruleset!r}",
@@ -775,7 +805,7 @@ def _check_description(
     desc = rule.get("description", "")
     if isinstance(desc, str) and len(desc) > _MAX_DESCRIPTION:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA500",
                 severity=Severity.WARNING,
                 message=f"Description exceeds {_MAX_DESCRIPTION} characters ({len(desc)})",
@@ -805,7 +835,7 @@ def _check_match_deep(
     if ve is not None:
         if ve != "SRC_IPS_V1":
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA312",
                     severity=Severity.ERROR,
                     message=f"Invalid versioned_expr: {ve!r} (only 'SRC_IPS_V1' is valid)",
@@ -817,7 +847,7 @@ def _check_match_deep(
         config = match.get("config")
         if config is None or not isinstance(config, dict):
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA313",
                     severity=Severity.ERROR,
                     message="versioned_expr requires 'config' with 'src_ip_ranges'",
@@ -828,7 +858,7 @@ def _check_match_deep(
             )
         elif "src_ip_ranges" not in config:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA313",
                     severity=Severity.ERROR,
                     message="versioned_expr requires 'config' with 'src_ip_ranges'",
@@ -844,7 +874,7 @@ def _check_match_deep(
         ranges = config.get("src_ip_ranges")
         if isinstance(ranges, list) and len(ranges) == 0:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA314",
                     severity=Severity.WARNING,
                     message="Empty src_ip_ranges matches nothing",
@@ -859,7 +889,7 @@ def _check_match_deep(
         expression = expr_obj.get("expression")
         if isinstance(expression, str) and expression.strip() == "":
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA314",
                     severity=Severity.WARNING,
                     message="Empty or whitespace-only CEL expression matches nothing",
@@ -912,7 +942,7 @@ def _check_cel_fields(
         # Skip CEL/string literals that look like field refs but aren't
         # (e.g. part of a string value). We only flag top-level field-like patterns.
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA310",
                 severity=Severity.WARNING,
                 message=f"Unknown field reference: {field!r}",
@@ -940,7 +970,7 @@ def _check_cel_functions(
         seen.add(func)
         if func not in _KNOWN_FUNCTIONS:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA311",
                     severity=Severity.WARNING,
                     message=f"Unknown function: {func!r}",
@@ -965,7 +995,7 @@ def _check_cel_regex(
             re.compile(pattern)
         except re.error as exc:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA413",
                     severity=Severity.WARNING,
                     message=f"Invalid regex pattern in matches(): {exc}",
@@ -987,7 +1017,7 @@ def _check_cel_sensitivity(
         level = int(m.group(1))
         if level < 0 or level > 4:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA416",
                     severity=Severity.WARNING,
                     message=f"Preconfigured WAF sensitivity level must be 0-4 (got {level})",
@@ -1013,7 +1043,7 @@ def _check_cel_header_names(
         seen.add(name)
         if not _HEADER_NAME_RE.match(name):
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA418",
                     severity=Severity.WARNING,
                     message=f"Invalid HTTP header name in CEL expression: {name!r}",
@@ -1049,7 +1079,7 @@ def _check_cel_country_codes(
         seen.add(code)
         if len(code) != 2:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA315",
                     severity=Severity.WARNING,
                     message=(
@@ -1063,7 +1093,7 @@ def _check_cel_country_codes(
             )
         elif not code.isalpha():
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA315",
                     severity=Severity.WARNING,
                     message=(
@@ -1076,7 +1106,7 @@ def _check_cel_country_codes(
             )
         elif code != code.upper():
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA315",
                     severity=Severity.WARNING,
                     message=(f"Country code {code!r} should be uppercase ({code.upper()!r})"),
@@ -1114,7 +1144,7 @@ def _check_cel_http_methods(
             close = difflib.get_close_matches(method.upper(), _VALID_HTTP_METHODS, n=1)
             suggestion = f" (did you mean {close[0]!r}?)" if close else ""
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA316",
                     severity=Severity.WARNING,
                     message=f"Unknown HTTP method {method!r}{suggestion}",
@@ -1139,7 +1169,7 @@ def _check_cel_iniprange_cidr(
             net = ipaddress.ip_network(cidr, strict=False)
         except ValueError as exc:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA317",
                     severity=Severity.ERROR,
                     message=f"Invalid CIDR in inIpRange(): {cidr!r} ({exc})",
@@ -1154,7 +1184,7 @@ def _check_cel_iniprange_cidr(
         for private in _PRIVATE_SUPERNETS:
             if net.version == private.version and net.subnet_of(private):
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA317b",
                         severity=Severity.WARNING,
                         message=(f"Private/reserved IP range in inIpRange(): {cidr!r}"),
@@ -1198,7 +1228,7 @@ def _check_cel_type_mismatch(
         seen.add(key)
 
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA318",
                 severity=Severity.WARNING,
                 message=(
@@ -1235,7 +1265,7 @@ def _check_cel_case_sensitivity(
         seen.add(key)
 
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA319",
                 severity=Severity.INFO,
                 message=(
@@ -1267,7 +1297,7 @@ def _check_rate_limit_deep(
     if rlt is not None:
         if not isinstance(rlt, dict):
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA420",
                     severity=Severity.ERROR,
                     message="rate_limit_threshold must be a dict with 'count' and 'interval_sec'",
@@ -1279,7 +1309,7 @@ def _check_rate_limit_deep(
         else:
             if "count" not in rlt:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA420",
                         severity=Severity.ERROR,
                         message="rate_limit_threshold missing required field 'count'",
@@ -1290,7 +1320,7 @@ def _check_rate_limit_deep(
                 )
             if "interval_sec" not in rlt:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA420",
                         severity=Severity.ERROR,
                         message="rate_limit_threshold missing required field 'interval_sec'",
@@ -1304,7 +1334,7 @@ def _check_rate_limit_deep(
             count = rlt.get("count")
             if count is not None and (not isinstance(count, int) or isinstance(count, bool)):
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA421",
                         severity=Severity.ERROR,
                         message=(
@@ -1320,7 +1350,7 @@ def _check_rate_limit_deep(
                 not isinstance(interval, int) or isinstance(interval, bool)
             ):
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA421",
                         severity=Severity.ERROR,
                         message=(
@@ -1338,7 +1368,7 @@ def _check_rate_limit_deep(
     if eok is not None:
         if eok not in _VALID_ENFORCE_ON_KEYS:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA423",
                     severity=Severity.ERROR,
                     message=f"Invalid enforce_on_key: {eok!r}",
@@ -1352,7 +1382,7 @@ def _check_rate_limit_deep(
             # GA424: need enforce_on_key_name
             if "enforce_on_key_name" not in rlo:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA424",
                         severity=Severity.ERROR,
                         message=(f"enforce_on_key '{eok}' requires 'enforce_on_key_name'"),
@@ -1367,7 +1397,7 @@ def _check_rate_limit_deep(
         ea = rlo.get("exceed_action")
         if ea == "redirect" and eok is None:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA422",
                     severity=Severity.WARNING,
                     message="rate_based_ban with redirect exceed_action should set enforce_on_key",
@@ -1382,7 +1412,7 @@ def _check_rate_limit_deep(
         bds = rlo.get("ban_duration_sec")
         if bds is None:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA425",
                     severity=Severity.ERROR,
                     message="rate_based_ban requires 'ban_duration_sec' in rate_limit_options",
@@ -1395,7 +1425,7 @@ def _check_rate_limit_deep(
             bad = not isinstance(bds, int) or isinstance(bds, bool) or bds <= 0
             if bad:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA426",
                         severity=Severity.ERROR,
                         message=f"ban_duration_sec must be a positive integer, got {bds!r}",
@@ -1406,7 +1436,7 @@ def _check_rate_limit_deep(
                 )
             elif bds > _MAX_BAN_DURATION:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA427",
                         severity=Severity.ERROR,
                         message=(
@@ -1424,7 +1454,7 @@ def _check_rate_limit_deep(
     if eokn is not None and isinstance(eokn, str) and eok in ("HTTP_HEADER", "HTTP_COOKIE"):
         if not eokn:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA428",
                     severity=Severity.WARNING,
                     message="enforce_on_key_name must not be empty",
@@ -1435,7 +1465,7 @@ def _check_rate_limit_deep(
             )
         elif len(eokn) > _MAX_ENFORCE_ON_KEY_NAME:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA428",
                     severity=Severity.WARNING,
                     message=(
@@ -1449,7 +1479,7 @@ def _check_rate_limit_deep(
             )
         elif any(c <= "\x1f" or c == "\x7f" for c in eokn):
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA428",
                     severity=Severity.WARNING,
                     message="enforce_on_key_name contains control characters",
@@ -1460,7 +1490,7 @@ def _check_rate_limit_deep(
             )
         elif " " in eokn:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA428",
                     severity=Severity.WARNING,
                     message="enforce_on_key_name contains spaces",
@@ -1471,7 +1501,7 @@ def _check_rate_limit_deep(
             )
         elif eok == "HTTP_HEADER" and not _HEADER_NAME_RE.match(eokn):
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA428",
                     severity=Severity.WARNING,
                     message=(
@@ -1491,7 +1521,7 @@ def _check_rate_limit_deep(
         # GA414: mutually exclusive with enforce_on_key
         if eok is not None:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA414",
                     severity=Severity.ERROR,
                     message=("enforce_on_key_configs is mutually exclusive with enforce_on_key"),
@@ -1503,7 +1533,7 @@ def _check_rate_limit_deep(
 
         if not isinstance(eokc, list):
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA414",
                     severity=Severity.ERROR,
                     message="enforce_on_key_configs must be a list",
@@ -1516,7 +1546,7 @@ def _check_rate_limit_deep(
             # GA414: max 3 entries
             if len(eokc) > _MAX_ENFORCE_ON_KEY_CONFIGS:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA414",
                         severity=Severity.ERROR,
                         message=(
@@ -1532,7 +1562,7 @@ def _check_rate_limit_deep(
             for i, entry in enumerate(eokc):
                 if not isinstance(entry, dict):
                     results.append(
-                        LintResult(
+                        _result(
                             rule_id="GA414",
                             severity=Severity.ERROR,
                             message=(f"enforce_on_key_configs[{i}] must be a dict"),
@@ -1543,7 +1573,7 @@ def _check_rate_limit_deep(
                     )
                 elif "enforce_on_key_type" not in entry:
                     results.append(
-                        LintResult(
+                        _result(
                             rule_id="GA414",
                             severity=Severity.ERROR,
                             message=(f"enforce_on_key_configs[{i}] missing 'enforce_on_key_type'"),
@@ -1562,7 +1592,7 @@ def _check_rate_limit_deep(
                         seen_types.append(kt)
             if len(seen_types) != len(set(seen_types)):
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA415",
                         severity=Severity.WARNING,
                         message="Duplicate enforce_on_key_type in enforce_on_key_configs",
@@ -1592,7 +1622,7 @@ def _check_action_params(
     # GA429: ban_duration_sec only valid for rate_based_ban
     if action == "throttle" and "ban_duration_sec" in rlo:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA429",
                 severity=Severity.WARNING,
                 message="ban_duration_sec is only valid for rate_based_ban, not throttle",
@@ -1606,7 +1636,7 @@ def _check_action_params(
     ea = rlo.get("exceed_action")
     if ea == "redirect" and "exceed_redirect_options" not in rlo:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA431",
                 severity=Severity.ERROR,
                 message="exceed_action 'redirect' requires 'exceed_redirect_options'",
@@ -1620,7 +1650,7 @@ def _check_action_params(
     # exceed_redirect_options without a redirect exceed_action is meaningless
     if ea is not None and ea != "redirect" and "exceed_redirect_options" in rlo:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA432",
                 severity=Severity.ERROR,
                 message=(
@@ -1639,7 +1669,7 @@ def _check_action_params(
         ero_type = ero.get("type", "")
         if ero_type and ero_type not in _VALID_REDIRECT_TYPES:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA411",
                     severity=Severity.ERROR,
                     message=(
@@ -1656,7 +1686,7 @@ def _check_action_params(
         if ero_target is not None and isinstance(ero_target, str):
             if not ero_target.strip():
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA419",
                         severity=Severity.ERROR,
                         message="redirect target must not be empty",
@@ -1667,7 +1697,7 @@ def _check_action_params(
                 )
             elif ero_type == "EXTERNAL_302" and not ero_target.startswith(("http://", "https://")):
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA412",
                         severity=Severity.ERROR,
                         message=(
@@ -1684,7 +1714,7 @@ def _check_action_params(
     if bt is not None:
         if not isinstance(bt, dict):
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA410",
                     severity=Severity.ERROR,
                     message="ban_threshold must be a dict with 'count' and 'interval_sec'",
@@ -1699,7 +1729,7 @@ def _check_action_params(
                 bad_type = not isinstance(bt_count, int) or isinstance(bt_count, bool)
                 if bad_type or bt_count < 1:
                     results.append(
-                        LintResult(
+                        _result(
                             rule_id="GA410",
                             severity=Severity.ERROR,
                             message="ban_threshold.count must be a positive integer",
@@ -1710,7 +1740,7 @@ def _check_action_params(
                     )
             else:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA410",
                         severity=Severity.ERROR,
                         message="ban_threshold missing required field 'count'",
@@ -1724,7 +1754,7 @@ def _check_action_params(
             if bt_interval is not None:
                 if bt_interval not in _VALID_INTERVALS:
                     results.append(
-                        LintResult(
+                        _result(
                             rule_id="GA410",
                             severity=Severity.ERROR,
                             message=(f"ban_threshold.interval_sec invalid (got {bt_interval!r})"),
@@ -1736,7 +1766,7 @@ def _check_action_params(
                     )
             else:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA410",
                         severity=Severity.ERROR,
                         message="ban_threshold missing required field 'interval_sec'",
@@ -1749,7 +1779,7 @@ def _check_action_params(
     # ban_threshold_sec without rate_limit_threshold makes no sense
     if "ban_threshold" in rlo and "rate_limit_threshold" not in rlo:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA432",
                 severity=Severity.ERROR,
                 message="ban_threshold requires rate_limit_threshold to be set",
@@ -1772,7 +1802,7 @@ def _check_preview(
     """GA600: rule is in preview mode (logs only, not enforced)."""
     if rule.get("preview") is True:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA600",
                 severity=Severity.INFO,
                 message="Rule is in preview mode (preview: true) — not enforced",
@@ -1805,7 +1835,7 @@ def _check_always_true_false(
             normalized = " ".join(expression.strip().lower().split())
             if is_always_true(normalized):
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA601",
                         severity=Severity.WARNING,
                         message="Expression is always true — this is a catch-all rule",
@@ -1817,7 +1847,7 @@ def _check_always_true_false(
                 return
             if is_always_false(normalized):
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA602",
                         severity=Severity.WARNING,
                         message="Expression is always false — rule never matches",
@@ -1836,7 +1866,7 @@ def _check_always_true_false(
             ranges = config.get("src_ip_ranges")
             if isinstance(ranges, list) and ranges == ["*"]:
                 results.append(
-                    LintResult(
+                    _result(
                         rule_id="GA601",
                         severity=Severity.WARNING,
                         message=("src_ip_ranges is ['*'] — this is a catch-all rule"),
@@ -1862,7 +1892,7 @@ def _check_inconsistent_enforce_on_key(
     if len(unique_keys) > 1:
         detail_parts = [f"{ref}={key}" for ref, key in sorted(seen.items())]
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA105",
                 severity=Severity.WARNING,
                 message=(
@@ -1883,7 +1913,7 @@ def _check_duplicate_waf_rulesets(
     for ruleset, refs in sorted(seen.items()):
         if len(refs) > 1:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA108",
                     severity=Severity.WARNING,
                     message=(
@@ -1903,7 +1933,7 @@ def _check_duplicate_priorities(
     for pri, refs in sorted(seen.items()):
         if len(refs) > 1:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA102",
                     severity=Severity.ERROR,
                     message=f"Duplicate priority {pri} in rules: {', '.join(refs)}",
@@ -1921,7 +1951,7 @@ def _check_duplicate_expressions(
     for _expr, refs in sorted(seen.items()):
         if len(refs) > 1:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA104",
                     severity=Severity.WARNING,
                     message=f"Duplicate expression across rules: {', '.join(refs)}",
@@ -1940,9 +1970,8 @@ def _check_dead_rules(
     match_all_pri: int | None = None
     for rule in rules:
         ref = rule.get("ref", "")
-        try:
-            pri = int(ref)
-        except (ValueError, TypeError):
+        pri = _parse_priority(ref)
+        if pri is None:
             continue
         match = rule.get("match")
         if not isinstance(match, dict):
@@ -1960,13 +1989,12 @@ def _check_dead_rules(
 
     for rule in rules:
         ref = rule.get("ref", "")
-        try:
-            pri = int(ref)
-        except (ValueError, TypeError):
+        pri = _parse_priority(ref)
+        if pri is None:
             continue
         if pri > match_all_pri:
             results.append(
-                LintResult(
+                _result(
                     rule_id="GA103",
                     severity=Severity.WARNING,
                     message=(
@@ -2004,7 +2032,7 @@ def validate_rule_count(
     count = len(rules)
     if count > limit:
         results.append(
-            LintResult(
+            _result(
                 rule_id="GA502",
                 severity=Severity.WARNING,
                 message=(f"Rule count ({count}) exceeds {tier} tier limit ({limit})"),

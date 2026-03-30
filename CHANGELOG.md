@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-03-30
+
+### Changed
+- Extract `_parse_priority()` helper in `validate.py` to deduplicate
+  three identical `try: int(ref) / except` blocks.
+- Extract `_result()` factory helper in `validate.py` to reduce
+  `LintResult` boilerplate across 89 call sites.
+- `_retry_transient()`: replace `# type: ignore[misc]` with explicit
+  `assert last_exc is not None` before re-raising.
+
 ## [0.5.2] - 2026-03-30
 
 ### Changed

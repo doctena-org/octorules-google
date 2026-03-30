@@ -70,7 +70,8 @@ def _retry_transient(fn, *, label: str, retries: int = 2):
                     e,
                 )
                 time.sleep(delay)
-    raise last_exc  # type: ignore[misc]
+    assert last_exc is not None  # loop ran at least once
+    raise last_exc
 
 
 # ---------------------------------------------------------------------------

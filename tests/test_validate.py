@@ -2481,3 +2481,88 @@ class TestGA502:
             rules, plan_tier="standard", phase="gcloud_armor_custom_rules"
         )
         assert results[0].phase == "gcloud_armor_custom_rules"
+
+
+class TestResultFactory:
+    """Tests for the _result() LintResult factory helper."""
+
+    def test_creates_lint_result_with_required_fields(self):
+        """Factory returns a LintResult with all required fields set."""
+        from octorules.linter.engine import LintResult, Severity
+
+        from octorules_google.validate import _result
+
+        r = _result("GC001", Severity.ERROR, "test message", "custom_rules", "ref1")
+        assert isinstance(r, LintResult)
+        assert r.rule_id == "GC001"
+        assert r.severity == Severity.ERROR
+        assert r.message == "test message"
+        assert r.phase == "custom_rules"
+        assert r.ref == "ref1"
+
+    def test_default_optional_fields(self):
+        """Factory defaults field and suggestion to empty strings."""
+        from octorules.linter.engine import Severity
+
+        from octorules_google.validate import _result
+
+        r = _result("GC002", Severity.WARNING, "msg", "rate_based")
+        assert r.ref == ""
+        assert r.field == ""
+        assert r.suggestion == ""
+
+    def test_optional_fields_passthrough(self):
+        """Factory passes field and suggestion through to LintResult."""
+        from octorules.linter.engine import Severity
+
+        from octorules_google.validate import _result
+
+        r = _result(
+            "GC003",
+            Severity.INFO,
+            "msg",
+            "managed",
+            field="action",
+            suggestion="use block",
+        )
+        assert r.field == "action"
+        assert r.suggestion == "use block"
+
+
+class TestParsePriority:
+    """Tests for the _parse_priority() helper."""
+
+    def test_valid_integer(self):
+        from octorules_google.validate import _parse_priority
+
+        assert _parse_priority("100") == 100
+
+    def test_zero(self):
+        from octorules_google.validate import _parse_priority
+
+        assert _parse_priority("0") == 0
+
+    def test_negative(self):
+        from octorules_google.validate import _parse_priority
+
+        assert _parse_priority("-1") == -1
+
+    def test_large_number(self):
+        from octorules_google.validate import _parse_priority
+
+        assert _parse_priority("2147483647") == 2147483647
+
+    def test_invalid_string(self):
+        from octorules_google.validate import _parse_priority
+
+        assert _parse_priority("not-a-number") is None
+
+    def test_float_string(self):
+        from octorules_google.validate import _parse_priority
+
+        assert _parse_priority("100.5") is None
+
+    def test_empty_string(self):
+        from octorules_google.validate import _parse_priority
+
+        assert _parse_priority("") is None

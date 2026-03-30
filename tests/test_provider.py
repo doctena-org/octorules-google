@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from google.api_core.exceptions import Forbidden, GoogleAPIError, NotFound, Unauthorized
+from google.api_core.exceptions import (
+    Forbidden,
+    GoogleAPIError,
+    NotFound,
+    ServiceUnavailable,
+    Unauthorized,
+)
 from google.auth.exceptions import DefaultCredentialsError
 from octorules.provider.base import BaseProvider, Scope
 from octorules.provider.exceptions import ProviderAuthError, ProviderConnectionError, ProviderError
@@ -860,3 +868,79 @@ class TestConcurrentWorkers:
         assert len(results) == 10
         for name in policy_names:
             assert results[name] == name
+
+
+class TestRetryTransient:
+    """Tests for _retry_transient() exponential backoff and error propagation."""
+
+    def test_succeeds_first_try(self):
+        """Function that succeeds immediately returns its result."""
+        from octorules_google.provider import _retry_transient
+
+        result = _retry_transient(lambda: 42, label="test")
+        assert result == 42
+
+    def test_succeeds_on_retry(self):
+        """Function that fails then succeeds returns its result."""
+        from octorules_google.provider import _retry_transient
+
+        calls = [0]
+
+        def flaky():
+            calls[0] += 1
+            if calls[0] == 1:
+                raise ServiceUnavailable("transient")
+            return "ok"
+
+        with patch("octorules_google.provider.time.sleep"):
+            result = _retry_transient(flaky, label="test", retries=2)
+        assert result == "ok"
+        assert calls[0] == 2
+
+    def test_exhausts_retries(self):
+        """Raises the last exception after all retries are exhausted."""
+        from octorules_google.provider import _retry_transient
+
+        err = ServiceUnavailable("persistent")
+        with patch("octorules_google.provider.time.sleep"):
+            with pytest.raises(ServiceUnavailable):
+                _retry_transient(lambda: (_ for _ in ()).throw(err), label="test", retries=2)
+
+    def test_auth_error_propagates_immediately(self):
+        """Non-retryable errors (auth) propagate without retry."""
+        from octorules_google.provider import _retry_transient
+
+        calls = [0]
+
+        def fail():
+            calls[0] += 1
+            raise DefaultCredentialsError()
+
+        with pytest.raises(DefaultCredentialsError):
+            _retry_transient(fail, label="test", retries=2)
+        assert calls[0] == 1  # No retries
+
+    def test_backoff_timing(self):
+        """Retries use exponential backoff delays."""
+        from octorules_google.provider import _retry_transient
+
+        err = ServiceUnavailable("fail")
+        sleep_mock = MagicMock()
+        with patch("octorules_google.provider.time.sleep", sleep_mock):
+            with pytest.raises(ServiceUnavailable):
+                _retry_transient(lambda: (_ for _ in ()).throw(err), label="test", retries=2)
+        # Should have slept twice (before retry 1 and retry 2)
+        assert sleep_mock.call_count == 2
+
+    def test_backoff_uses_correct_delay_values(self):
+        """Retries use the exact backoff delays from _RETRY_BACKOFF."""
+        from octorules_google.provider import _retry_transient
+
+        err = ServiceUnavailable("fail")
+        sleep_mock = MagicMock()
+        with patch("octorules_google.provider.time.sleep", sleep_mock):
+            with pytest.raises(ServiceUnavailable):
+                _retry_transient(lambda: (_ for _ in ()).throw(err), label="test", retries=2)
+        # _RETRY_BACKOFF = (1.0, 2.0, 4.0) — first retry uses index 0, second uses index 1
+        sleep_mock.assert_any_call(1.0)
+        sleep_mock.assert_any_call(2.0)
