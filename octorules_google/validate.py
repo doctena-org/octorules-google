@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import ipaddress
 import re
+import urllib.parse
 
 import celpy
 from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
@@ -40,6 +41,11 @@ def _result(
     )
 
 
+def _is_strict_int(val: object) -> bool:
+    """True if *val* is an int but not a bool."""
+    return isinstance(val, int) and not isinstance(val, bool)
+
+
 _BASE_ACTIONS = frozenset({"allow", "throttle", "rate_based_ban", "redirect"})
 _DENY_STATUSES = frozenset({403, 404, 502})
 _DENY_RE = re.compile(r"^deny\((\d+)\)$")
@@ -47,6 +53,7 @@ _VALID_REDIRECT_TYPES = frozenset({"GOOGLE_RECAPTCHA", "EXTERNAL_302"})
 _MAX_PRIORITY = 2_147_483_646
 _MAX_DESCRIPTION = 1024
 _MAX_EXPRESSION = 2048
+_MAX_REGEX_PATTERN_LEN = 512
 
 _KNOWN_WAF_RULE_SETS = frozenset(
     {
@@ -495,7 +502,7 @@ def _check_rate_limit_options(
         count = rlt.get("count")
         if count is not None:
             max_count = 10_000 if action == "rate_based_ban" else 1_000_000
-            bad = not isinstance(count, int) or isinstance(count, bool)
+            bad = not _is_strict_int(count)
             if bad or count < 1 or count > max_count:
                 results.append(
                     _result(
@@ -569,7 +576,7 @@ def _check_redirect_options(
                     rule_id="GA409",
                     severity=Severity.ERROR,
                     message=(
-                        f"redirect_options.target must be a valid URL"
+                        f"redirect_options.target must start with http:// or https://"
                         f" for EXTERNAL_302 (got {target!r})"
                     ),
                     phase=phase,
@@ -577,6 +584,22 @@ def _check_redirect_options(
                     field="redirect_options.target",
                 )
             )
+        else:
+            parsed = urllib.parse.urlparse(target)
+            if not parsed.netloc:
+                results.append(
+                    _result(
+                        rule_id="GA409",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"redirect_options.target must include a host"
+                            f" for EXTERNAL_302 (got {target!r})"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="redirect_options.target",
+                    )
+                )
 
 
 def _check_match(
@@ -988,9 +1011,24 @@ def _check_cel_regex(
     phase: str,
     ref: str,
 ) -> None:
-    """GA413: invalid regex pattern in CEL matches() calls."""
+    """GA413: invalid/overlong regex pattern in CEL matches() calls."""
     for m in _MATCHES_RE.finditer(expr):
         pattern = m.group(1)
+        if len(pattern) > _MAX_REGEX_PATTERN_LEN:
+            results.append(
+                _result(
+                    rule_id="GA413",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"Regex pattern too long ({len(pattern)} chars,"
+                        f" max {_MAX_REGEX_PATTERN_LEN})"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+            continue
         try:
             re.compile(pattern)
         except re.error as exc:
@@ -1113,6 +1151,7 @@ def _check_cel_country_codes(
                     phase=phase,
                     ref=ref,
                     field="match.expr.expression",
+                    suggestion=f"Replace {code!r} with {code.upper()!r}",
                 )
             )
 
@@ -1332,23 +1371,39 @@ def _check_rate_limit_deep(
 
             # GA421: type validation
             count = rlt.get("count")
-            if count is not None and (not isinstance(count, int) or isinstance(count, bool)):
-                results.append(
-                    _result(
-                        rule_id="GA421",
-                        severity=Severity.ERROR,
-                        message=(
-                            f"rate_limit_threshold.count must be int, got {type(count).__name__}"
-                        ),
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.rate_limit_threshold.count",
+            if count is not None:
+                if not _is_strict_int(count):
+                    results.append(
+                        _result(
+                            rule_id="GA421",
+                            severity=Severity.ERROR,
+                            message=(
+                                f"rate_limit_threshold.count must be int,"
+                                f" got {type(count).__name__}"
+                            ),
+                            phase=phase,
+                            ref=ref,
+                            field="rate_limit_options.rate_limit_threshold.count",
+                        )
                     )
-                )
+                else:
+                    max_count = 10_000 if action == "rate_based_ban" else 1_000_000
+                    if count < 1 or count > max_count:
+                        results.append(
+                            _result(
+                                rule_id="GA421",
+                                severity=Severity.ERROR,
+                                message=(
+                                    f"rate_limit_threshold.count must be 1\u2013{max_count:,}"
+                                    f" for {action}, got {count!r}"
+                                ),
+                                phase=phase,
+                                ref=ref,
+                                field="rate_limit_options.rate_limit_threshold.count",
+                            )
+                        )
             interval = rlt.get("interval_sec")
-            if interval is not None and (
-                not isinstance(interval, int) or isinstance(interval, bool)
-            ):
+            if interval is not None and (not _is_strict_int(interval)):
                 results.append(
                     _result(
                         rule_id="GA421",
@@ -1422,7 +1477,7 @@ def _check_rate_limit_deep(
                 )
             )
         else:
-            bad = not isinstance(bds, int) or isinstance(bds, bool) or bds <= 0
+            bad = not _is_strict_int(bds) or bds <= 0
             if bad:
                 results.append(
                     _result(
@@ -1695,19 +1750,37 @@ def _check_action_params(
                         field="rate_limit_options.exceed_redirect_options.target",
                     )
                 )
-            elif ero_type == "EXTERNAL_302" and not ero_target.startswith(("http://", "https://")):
-                results.append(
-                    _result(
-                        rule_id="GA412",
-                        severity=Severity.ERROR,
-                        message=(
-                            "exceed_redirect_options.target must be a valid URL for EXTERNAL_302"
-                        ),
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.exceed_redirect_options.target",
+            elif ero_type == "EXTERNAL_302":
+                if not ero_target.startswith(("http://", "https://")):
+                    results.append(
+                        _result(
+                            rule_id="GA412",
+                            severity=Severity.ERROR,
+                            message=(
+                                "exceed_redirect_options.target must start with"
+                                " http:// or https:// for EXTERNAL_302"
+                            ),
+                            phase=phase,
+                            ref=ref,
+                            field="rate_limit_options.exceed_redirect_options.target",
+                        )
                     )
-                )
+                else:
+                    parsed = urllib.parse.urlparse(ero_target)
+                    if not parsed.netloc:
+                        results.append(
+                            _result(
+                                rule_id="GA412",
+                                severity=Severity.ERROR,
+                                message=(
+                                    "exceed_redirect_options.target must include a host"
+                                    " for EXTERNAL_302"
+                                ),
+                                phase=phase,
+                                ref=ref,
+                                field="rate_limit_options.exceed_redirect_options.target",
+                            )
+                        )
 
     # GA410: ban_threshold structure validation
     bt = rlo.get("ban_threshold")
@@ -1726,7 +1799,7 @@ def _check_action_params(
         else:
             bt_count = bt.get("count")
             if bt_count is not None:
-                bad_type = not isinstance(bt_count, int) or isinstance(bt_count, bool)
+                bad_type = not _is_strict_int(bt_count)
                 if bad_type or bt_count < 1:
                     results.append(
                         _result(

@@ -271,7 +271,7 @@ gcloud_armor_custom_rules:
         expression: "origin.region_code == 'US'"
 ```
 
-**Fix:** Assign unique priorities to each rule.
+**Fix:** Assign unique priorities to each rule. Space priorities by 10 or 100 (e.g. 1000, 1010, 1020) to leave room for future insertions.
 
 ---
 
@@ -297,7 +297,7 @@ gcloud_armor_custom_rules:
         expression: "origin.region_code == 'US'"
 ```
 
-**Fix:** Remove the unreachable rule, or give it a lower priority number (higher precedence) than the match-all rule.
+**Fix:** Remove the unreachable rule, or give it a lower priority number (higher precedence) than the match-all rule. Remember: lower priority number = higher precedence in Cloud Armor.
 
 ---
 
@@ -323,7 +323,7 @@ gcloud_armor_custom_rules:
         expression: "origin.region_code == 'CN'"
 ```
 
-**Fix:** Remove the duplicate or update one expression to match different traffic.
+**Fix:** Remove the duplicate or update one expression to match different traffic. If the rules intentionally use the same expression with different actions, combine them into a single rule or suppress with `# octorules:disable=GA104`.
 
 ---
 
@@ -492,7 +492,7 @@ gcloud_armor_custom_rules:
           - "not-a-cidr"
 ```
 
-**Fix:** Use valid CIDR notation:
+**Fix:** Use standard CIDR notation -- `10.0.0.0/24` not `10.0.0.0/33`. Common mistakes: prefix length exceeding 32 (IPv4) or 128 (IPv6), missing `/` prefix, or typos in the IP address.
 
 ```yaml
         src_ip_ranges:
@@ -518,7 +518,7 @@ gcloud_armor_custom_rules:
         expression: "origin.region_code =="
 ```
 
-**Fix:** Correct the CEL syntax. Refer to the [Cloud Armor rules language reference](https://cloud.google.com/armor/docs/rules-language-reference).
+**Fix:** Check CEL syntax -- ensure quotes, parentheses, and operators are balanced. Common mistakes: unmatched `(` or `"`, missing `==` operator, or using `=` instead of `==`. Refer to the [Cloud Armor rules language reference](https://cloud.google.com/armor/docs/rules-language-reference).
 
 ---
 
@@ -555,7 +555,7 @@ Cloud Armor CEL expressions have a 2,048-character limit. Expressions exceeding 
 
 **Triggers on:** A CEL expression longer than 2,048 characters.
 
-**Fix:** Shorten the expression -- split complex logic across multiple rules with different priorities, or use preconfigured WAF rules instead of long inline expressions.
+**Fix:** Shorten the expression -- split complex logic across multiple rules with different priorities, or use preconfigured WAF rules instead of long inline expressions. For large IP lists, use `versioned_expr: SRC_IPS_V1` with `src_ip_ranges` instead of chaining `inIpRange()` calls.
 
 ---
 
@@ -579,7 +579,7 @@ gcloud_armor_custom_rules:
           - "10.1.0.0/16"
 ```
 
-**Fix:** Remove the redundant (narrower) CIDR entry since it is already covered by the broader range.
+**Fix:** Remove the redundant (narrower) CIDR entry since it is already covered by the broader range. For example, if you have both `10.0.0.0/8` and `10.1.0.0/16`, remove the `/16` -- it is already contained within the `/8`.
 
 ---
 
@@ -602,7 +602,7 @@ gcloud_armor_custom_rules:
           - "0.0.0.0/0"
 ```
 
-**Fix:** Use a CEL match-all expression or narrow the CIDR range:
+**Fix:** Use a CEL match-all expression or narrow the CIDR range. If you truly intend to match all traffic, use a CEL `"true"` expression instead of `/0` -- it is more explicit and avoids confusion:
 
 ```yaml
     match:
@@ -1022,7 +1022,7 @@ gcloud_armor_redirect_rules:
 
 **Severity:** ERROR
 
-When `redirect_options.type` is `EXTERNAL_302`, the `target` must be a full URL starting with `http://` or `https://`. Relative paths and other schemes are not valid.
+When `redirect_options.type` is `EXTERNAL_302`, the `target` must be a full URL starting with `http://` or `https://` and must include a host (netloc). Relative paths, bare schemes (e.g. `https://`), and other schemes are not valid.
 
 **Triggers on:**
 
@@ -1032,7 +1032,15 @@ When `redirect_options.type` is `EXTERNAL_302`, the `target` must be a full URL 
       target: "/relative/path"
 ```
 
-**Fix:** Use a full URL:
+or:
+
+```yaml
+    redirect_options:
+      type: EXTERNAL_302
+      target: "https://"
+```
+
+**Fix:** Use a full URL including scheme and host. Ensure the target is not just `https://` without a hostname:
 
 ```yaml
     redirect_options:
@@ -1197,7 +1205,7 @@ The `exceed_redirect_options.type` value must be either `GOOGLE_RECAPTCHA` or `E
 
 **Severity:** ERROR
 
-When `exceed_redirect_options.type` is `EXTERNAL_302`, the `target` must be a full URL starting with `http://` or `https://`.
+When `exceed_redirect_options.type` is `EXTERNAL_302`, the `target` must be a full URL starting with `http://` or `https://` and must include a host. Bare schemes and relative paths are rejected.
 
 **Triggers on:**
 
@@ -1207,7 +1215,7 @@ When `exceed_redirect_options.type` is `EXTERNAL_302`, the `target` must be a fu
         target: "/relative/path"
 ```
 
-**Fix:** Use a full URL:
+**Fix:** Use a full URL including scheme and host:
 
 ```yaml
       exceed_redirect_options:
@@ -1231,7 +1239,7 @@ A CEL `matches()` call contains a regex pattern that fails to compile. Cloud Arm
         expression: "request.path.matches('[invalid')"
 ```
 
-**Fix:** Use a valid regex pattern:
+**Fix:** Use a valid regex pattern. Common mistakes: unmatched `[` or `(`, unescaped special characters like `.` or `*` at invalid positions, and PCRE-only features (Cloud Armor uses RE2 syntax, which does not support backreferences or lookahead):
 
 ```yaml
         expression: "request.path.matches('.*api.*')"
@@ -1670,7 +1678,7 @@ Cloud Armor rule descriptions have a 1,024-character limit. Descriptions exceedi
 
 **Triggers on:** A rule with a `description` field longer than 1,024 characters.
 
-**Fix:** Shorten the description to 1,024 characters or fewer.
+**Fix:** Shorten the description to 1,024 characters or fewer. Focus on the rule's purpose and link to an external ticket or wiki for detailed context.
 
 ---
 
@@ -1693,7 +1701,7 @@ gcloud_armor_custom_rules:
           - "192.168.1.0/24"
 ```
 
-**Fix:** Use public IP ranges that match actual client traffic, or remove the rule if it was added in error.
+**Fix:** Use public IP ranges that match actual client traffic, or remove the rule if it was added in error. If you are testing locally, suppress with `# octorules:disable=GA503`. Private ranges like `10.x`, `172.16.x`, and `192.168.x` will never match real internet traffic in Cloud Armor.
 
 ---
 
@@ -1760,7 +1768,7 @@ gcloud_armor_custom_rules:
       expr: "true"
 ```
 
-**Fix:** Add a specific match condition, or use `# octorules:disable=GA601` if the catch-all is intentional.
+**Fix:** Add a specific match condition, or use `# octorules:disable=GA601` if the catch-all is intentional. A common pattern is a low-priority catch-all `deny(403)` as the default rule -- suppress the warning if this is the intended behavior.
 
 ---
 
@@ -1780,4 +1788,4 @@ gcloud_armor_custom_rules:
       expr: "false"
 ```
 
-**Fix:** Fix the expression to match the intended traffic, or remove the rule.
+**Fix:** Fix the expression to match the intended traffic, or remove the rule. Common causes: leftover `"false"` from debugging, or a typo that makes the condition logically impossible (e.g. `origin.region_code == 'XX'` with a non-existent country code).

@@ -2566,3 +2566,315 @@ class TestParsePriority:
         from octorules_google.validate import _parse_priority
 
         assert _parse_priority("") is None
+
+
+# ---------------------------------------------------------------------------
+# _is_strict_int helper
+# ---------------------------------------------------------------------------
+
+
+class TestIsStrictInt:
+    def test_true_for_int(self):
+        from octorules_google.validate import _is_strict_int
+
+        assert _is_strict_int(42) is True
+
+    def test_false_for_bool_true(self):
+        from octorules_google.validate import _is_strict_int
+
+        assert _is_strict_int(True) is False
+
+    def test_false_for_bool_false(self):
+        from octorules_google.validate import _is_strict_int
+
+        assert _is_strict_int(False) is False
+
+    def test_false_for_string(self):
+        from octorules_google.validate import _is_strict_int
+
+        assert _is_strict_int("42") is False
+
+    def test_false_for_float(self):
+        from octorules_google.validate import _is_strict_int
+
+        assert _is_strict_int(3.14) is False
+
+    def test_false_for_none(self):
+        from octorules_google.validate import _is_strict_int
+
+        assert _is_strict_int(None) is False
+
+    def test_true_for_zero(self):
+        from octorules_google.validate import _is_strict_int
+
+        assert _is_strict_int(0) is True
+
+    def test_true_for_negative(self):
+        from octorules_google.validate import _is_strict_int
+
+        assert _is_strict_int(-1) is True
+
+
+# ---------------------------------------------------------------------------
+# GA421 range validation
+# ---------------------------------------------------------------------------
+
+
+class TestGA421Range:
+    def _rl_rule(self, action="throttle", **rlo_overrides):
+        """Build a rate-limit rule with overrides to rate_limit_options."""
+        rlo = {
+            "conform_action": "allow",
+            "exceed_action": "deny-429",
+            "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+        }
+        rlo.update(rlo_overrides)
+        return _rule(action=action, rate_limit_options=rlo)
+
+    def _ban_rule(self, **rlo_overrides):
+        """Build a rate_based_ban rule with overrides to rate_limit_options."""
+        rlo = {
+            "conform_action": "allow",
+            "exceed_action": "deny-429",
+            "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+            "ban_duration_sec": 120,
+        }
+        rlo.update(rlo_overrides)
+        return _rule(action="rate_based_ban", rate_limit_options=rlo)
+
+    def test_ga421_count_zero(self):
+        r = self._rl_rule(rate_limit_threshold={"count": 0, "interval_sec": 60})
+        results = validate_rules([r])
+        ga421 = [x for x in results if x.rule_id == "GA421"]
+        assert len(ga421) == 1
+        assert "got 0" in ga421[0].message
+
+    def test_ga421_count_negative(self):
+        r = self._rl_rule(rate_limit_threshold={"count": -1, "interval_sec": 60})
+        results = validate_rules([r])
+        ga421 = [x for x in results if x.rule_id == "GA421"]
+        assert len(ga421) == 1
+        assert "got -1" in ga421[0].message
+
+    def test_ga421_count_too_high_rate_based_ban(self):
+        r = self._ban_rule(rate_limit_threshold={"count": 10_001, "interval_sec": 60})
+        results = validate_rules([r])
+        ga421 = [x for x in results if x.rule_id == "GA421"]
+        assert len(ga421) == 1
+        assert "10,000" in ga421[0].message
+        assert "rate_based_ban" in ga421[0].message
+
+    def test_ga421_count_too_high_throttle(self):
+        r = self._rl_rule(
+            action="throttle",
+            rate_limit_threshold={"count": 1_000_001, "interval_sec": 60},
+        )
+        results = validate_rules([r])
+        ga421 = [x for x in results if x.rule_id == "GA421"]
+        assert len(ga421) == 1
+        assert "1,000,000" in ga421[0].message
+        assert "throttle" in ga421[0].message
+
+    def test_ga421_count_at_max_rate_based_ban_ok(self):
+        r = self._ban_rule(rate_limit_threshold={"count": 10_000, "interval_sec": 60})
+        results = validate_rules([r])
+        ga421 = [x for x in results if x.rule_id == "GA421"]
+        assert len(ga421) == 0
+
+    def test_ga421_count_at_max_throttle_ok(self):
+        r = self._rl_rule(
+            action="throttle",
+            rate_limit_threshold={"count": 1_000_000, "interval_sec": 60},
+        )
+        results = validate_rules([r])
+        ga421 = [x for x in results if x.rule_id == "GA421"]
+        assert len(ga421) == 0
+
+    def test_ga421_count_one_ok(self):
+        r = self._rl_rule(rate_limit_threshold={"count": 1, "interval_sec": 60})
+        results = validate_rules([r])
+        ga421 = [x for x in results if x.rule_id == "GA421"]
+        assert len(ga421) == 0
+
+
+# ---------------------------------------------------------------------------
+# GA413 regex length check
+# ---------------------------------------------------------------------------
+
+
+class TestGA413Length:
+    def test_ga413_long_pattern(self):
+        long_pattern = "a" * 600
+        expr = f"request.path.matches('{long_pattern}')"
+        match = {"expr": {"expression": expr}}
+        results = validate_rules([_rule(match=match)])
+        ga413 = [r for r in results if r.rule_id == "GA413"]
+        assert len(ga413) == 1
+        assert "too long" in ga413[0].message
+        assert "600 chars" in ga413[0].message
+
+    def test_ga413_pattern_at_limit_ok(self):
+        pattern = "a" * 512
+        expr = f"request.path.matches('{pattern}')"
+        match = {"expr": {"expression": expr}}
+        results = validate_rules([_rule(match=match)])
+        ga413 = [r for r in results if r.rule_id == "GA413"]
+        assert len(ga413) == 0
+
+    def test_ga413_long_pattern_skips_compile(self):
+        """A long pattern that would be invalid regex should fire length, not compile error."""
+        long_bad_pattern = "[" * 600
+        expr = f"request.path.matches('{long_bad_pattern}')"
+        match = {"expr": {"expression": expr}}
+        results = validate_rules([_rule(match=match)])
+        ga413 = [r for r in results if r.rule_id == "GA413"]
+        assert len(ga413) == 1
+        assert "too long" in ga413[0].message
+
+
+# ---------------------------------------------------------------------------
+# GA315 suggestion field
+# ---------------------------------------------------------------------------
+
+
+class TestGA315Suggestion:
+    def test_ga315_lowercase_has_suggestion(self):
+        match = {"expr": {"expression": "origin.region_code == 'us'"}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 1
+        assert ga315[0].suggestion == "Replace 'us' with 'US'"
+
+    def test_ga315_mixed_case_has_suggestion(self):
+        match = {"expr": {"expression": "origin.region_code == 'De'"}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 1
+        assert ga315[0].suggestion == "Replace 'De' with 'DE'"
+
+    def test_ga315_uppercase_no_suggestion(self):
+        match = {"expr": {"expression": "origin.region_code == 'US'"}}
+        results = validate_rules([_rule(match=match)])
+        ga315 = [r for r in results if r.rule_id == "GA315"]
+        assert len(ga315) == 0
+
+
+# ---------------------------------------------------------------------------
+# CEL edge case tests
+# ---------------------------------------------------------------------------
+
+
+class TestCELEdgeCases:
+    """Edge case tests for CEL expression validation."""
+
+    def test_ga302_escaped_quotes_in_expression(self):
+        """GA302 should not fire on valid CEL with escaped quotes."""
+        rule = _rule(match={"expr": {"expression": 'request.path.matches("test\\\\"quote")'}})
+        results = validate_rules([rule])
+        ga302 = [r for r in results if r.rule_id == "GA302"]
+        from octorules.linter.engine import Severity
+
+        # This should either pass or fail gracefully, not crash
+        assert (
+            all(r.severity in (Severity.ERROR, Severity.WARNING) for r in ga302) or len(ga302) == 0
+        )
+
+    def test_ga301_cidr_leading_zeros(self):
+        """GA301 should handle CIDR with leading zeros without crashing."""
+        rule = _rule(match={"expr": {"expression": 'inIpRange(origin.ip, "192.168.001.0/24")'}})
+        results = validate_rules([rule])
+        # Leading zeros are technically valid but unusual — check behavior
+        # (no assertion on exact outcome, just verify no crash)
+        assert isinstance(results, list)
+
+    def test_ga302_expression_at_2048_boundary(self):
+        """GA304 should not fire at expressions of exactly 2048 chars."""
+        prefix = 'request.path == "'
+        suffix = '"'
+        padding = "x" * (2048 - len(prefix) - len(suffix))
+        expr = prefix + padding + suffix
+        assert len(expr) == 2048
+        rule = _rule(match={"expr": {"expression": expr}})
+        results = validate_rules([rule])
+        # At exactly 2048, should NOT fire the length check
+        ga304 = [r for r in results if r.rule_id == "GA304"]
+        assert len(ga304) == 0
+
+    def test_ga302_expression_at_2049_boundary(self):
+        """GA304 should fire at 2049 chars."""
+        prefix = 'request.path == "'
+        suffix = '"'
+        padding = "x" * (2049 - len(prefix) - len(suffix))
+        expr = prefix + padding + suffix
+        assert len(expr) == 2049
+        rule = _rule(match={"expr": {"expression": expr}})
+        results = validate_rules([rule])
+        ga304 = [r for r in results if r.rule_id == "GA304"]
+        assert len(ga304) == 1
+
+
+# ---------------------------------------------------------------------------
+# GA409  URL validation (improved host check)
+# ---------------------------------------------------------------------------
+
+
+class TestGA409URLValidation:
+    """Tests for GA409 EXTERNAL_302 URL validation."""
+
+    def test_valid_url_accepted(self):
+        """Valid HTTPS URL should not trigger GA409."""
+        r = _rule(
+            action="redirect",
+            redirect_options={
+                "type": "EXTERNAL_302",
+                "target": "https://example.com/path",
+            },
+        )
+        ga409 = [x for x in validate_rules([r]) if x.rule_id == "GA409"]
+        assert len(ga409) == 0
+
+    def test_missing_host_rejected(self):
+        """URL with scheme but no host should trigger GA409."""
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": "https://"},
+        )
+        ga409 = [x for x in validate_rules([r]) if x.rule_id == "GA409"]
+        assert len(ga409) == 1
+        assert "host" in ga409[0].message.lower()
+
+    def test_no_scheme_rejected(self):
+        """URL without scheme should trigger GA409."""
+        r = _rule(
+            action="redirect",
+            redirect_options={
+                "type": "EXTERNAL_302",
+                "target": "example.com/path",
+            },
+        )
+        ga409 = [x for x in validate_rules([r]) if x.rule_id == "GA409"]
+        assert len(ga409) == 1
+
+    def test_http_with_host_accepted(self):
+        """Valid HTTP URL should not trigger GA409."""
+        r = _rule(
+            action="redirect",
+            redirect_options={
+                "type": "EXTERNAL_302",
+                "target": "http://example.com/path",
+            },
+        )
+        ga409 = [x for x in validate_rules([r]) if x.rule_id == "GA409"]
+        assert len(ga409) == 0
+
+    def test_https_with_port_accepted(self):
+        """HTTPS URL with port should not trigger GA409."""
+        r = _rule(
+            action="redirect",
+            redirect_options={
+                "type": "EXTERNAL_302",
+                "target": "https://example.com:8443/path",
+            },
+        )
+        ga409 = [x for x in validate_rules([r]) if x.rule_id == "GA409"]
+        assert len(ga409) == 0

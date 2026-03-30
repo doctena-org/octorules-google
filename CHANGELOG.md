@@ -4,7 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.6.0] - 2026-03-30
+
+### Added
+- GA421 now validates `rate_limit_threshold.count` range (1--10,000 for
+  `rate_based_ban`, 1--1,000,000 for `throttle`).
+- GA409/GA412 now validates redirect URL structure (scheme + host) using
+  `urllib.parse`.
+- GA413 rejects regex patterns exceeding 512 characters before compilation
+  (ReDoS protection).
+- GA315 includes a `suggestion` field for lowercase country codes.
+- Remediation guidance added to all 67 lint rules in `docs/lint.md`.
+
+### Changed
+- Boolean-as-int validation uses `_is_strict_int()` helper for consistency.
 
 ## [0.5.3] - 2026-03-30
 
