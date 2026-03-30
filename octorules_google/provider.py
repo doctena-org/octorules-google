@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 from google.api_core.exceptions import Forbidden, GoogleAPIError, NotFound, Unauthorized
 from google.auth.exceptions import DefaultCredentialsError
@@ -40,6 +41,36 @@ _wrap_provider_errors = make_error_wrapper(
     connection_errors=(ConnectionError, OSError),
     generic_errors=(GoogleAPIError,),
 )
+
+# Auth errors should NOT be retried.
+_NO_RETRY_ERRORS = (Unauthorized, Forbidden, DefaultCredentialsError, NotFound)
+_RETRY_BACKOFF = (1.0, 2.0, 4.0)
+
+
+def _retry_transient(fn, *, label: str, retries: int = 2):
+    """Call *fn* with retry on transient GoogleAPIError.
+
+    Auth/NotFound errors propagate immediately.  Returns the result of *fn*.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            return fn()
+        except _NO_RETRY_ERRORS:
+            raise
+        except (GoogleAPIError, ConnectionError, OSError) as e:
+            last_exc = e
+            if attempt < retries:
+                delay = _RETRY_BACKOFF[min(attempt, len(_RETRY_BACKOFF) - 1)]
+                log.warning(
+                    "Retrying %s (attempt %d/%d): %s",
+                    label,
+                    attempt + 1,
+                    retries + 1,
+                    e,
+                )
+                time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -255,38 +286,64 @@ class CloudArmorProvider:
             gcloud_rule = _denormalize_rule(rule)
             new_by_pri[gcloud_rule["priority"]] = gcloud_rule
 
+        patched = []
+        added = []
+        removed = []
+
         # 1. Patch in-place (priority exists in both old and new)
         for pri, gcloud_rule in new_by_pri.items():
             if pri in old_by_pri:
-                self._client.patch_rule(
-                    project=self._project,
-                    security_policy=policy_name,
-                    priority=pri,
-                    security_policy_rule_resource=gcloud_rule,
-                    timeout=self._timeout,
+                _retry_transient(
+                    lambda _p=pri, _r=gcloud_rule: self._client.patch_rule(
+                        project=self._project,
+                        security_policy=policy_name,
+                        priority=_p,
+                        security_policy_rule_resource=_r,
+                        timeout=self._timeout,
+                    ),
+                    label=f"patch rule priority={pri} in {policy_name}",
                 )
+                patched.append(pri)
 
         # 2. Add new priorities (not in old set)
         for pri, gcloud_rule in new_by_pri.items():
             if pri not in old_by_pri:
-                self._client.add_rule(
-                    project=self._project,
-                    security_policy=policy_name,
-                    security_policy_rule_resource=gcloud_rule,
-                    timeout=self._timeout,
+                _retry_transient(
+                    lambda _p=pri, _r=gcloud_rule: self._client.add_rule(
+                        project=self._project,
+                        security_policy=policy_name,
+                        security_policy_rule_resource=_r,
+                        timeout=self._timeout,
+                    ),
+                    label=f"add rule priority={pri} to {policy_name}",
                 )
+                added.append(pri)
 
         # 3. Remove old priorities (not in new set)
         for pri in old_by_pri:
             if pri not in new_by_pri:
-                self._client.remove_rule(
-                    request={
-                        "project": self._project,
-                        "security_policy": policy_name,
-                        "priority": pri,
-                    },
-                    timeout=self._timeout,
+                _retry_transient(
+                    lambda _p=pri: self._client.remove_rule(
+                        request={
+                            "project": self._project,
+                            "security_policy": policy_name,
+                            "priority": _p,
+                        },
+                        timeout=self._timeout,
+                    ),
+                    label=f"remove rule priority={pri} from {policy_name}",
                 )
+                removed.append(pri)
+
+        if patched or added or removed:
+            log.debug(
+                "put_phase_rules %s/%s: patched=%s added=%s removed=%s",
+                policy_name,
+                provider_id,
+                patched,
+                added,
+                removed,
+            )
 
         return len(rules)
 

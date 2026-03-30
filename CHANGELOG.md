@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-03-30
+
+### Changed
+- `put_phase_rules()` now retries each API call (patch, add, remove) for
+  transient errors with exponential backoff. Partial success is logged so
+  the next sync can reconcile.
+
+### Added
+- Ruff `B` (bugbear) and `RUF` lint rule categories to `pyproject.toml`.
+- `yamllint` step in lint CI workflow (parity with core/cloudflare).
+- Pre-commit hook (`scripts/hooks/pre-commit`) for ruff lint + format.
+- `Topic` classifiers and `Issues` URL in `pyproject.toml`.
+- Comprehensive `.gitignore` (aligned with core).
+
 ## [0.5.1] - 2026-03-25
 
 ### Fixed

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Pre-commit hook: lint and format check staged files.
+#
+# Install: from the repo root, run:
+#   ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
+set -euo pipefail
+
+.venv/bin/ruff check
+.venv/bin/ruff format --check

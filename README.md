@@ -171,7 +171,7 @@ Lint rules are registered automatically when octorules-google is installed. CEL 
 
 ## Known limitations
 
-- **Non-atomic updates:** Cloud Armor does not support atomic bulk rule replacement. `put_phase_rules` patches existing rules in place, adds new rules, then removes stale rules — so the policy never has *fewer* rules than intended. If an operation fails mid-way, re-run sync to converge.
+- **Non-atomic updates:** Cloud Armor does not support atomic bulk rule replacement. `put_phase_rules` patches existing rules in place, adds new rules, then removes stale rules — so the policy never has *fewer* rules than intended. Each API call is retried for transient errors with exponential backoff. If an operation fails after retries, partial progress is logged and the next sync will reconcile.
 - **Policy creation/deletion:** octorules-google manages rules within existing security policies. Creating or deleting policies (and attaching them to backend services) should be done via `gcloud` or Terraform.
 - **Policy-level settings are not managed.** The following are configured per-policy (not per-rule) and should be managed via `gcloud` or Terraform: adaptive DDoS protection (`adaptiveProtectionConfig`), advanced options (`advancedOptionsConfig`), and JSON body parsing (`jsonParsing`).
 
@@ -185,6 +185,7 @@ cd octorules-google
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
 ```
 
 ## License

@@ -358,7 +358,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
             )
         )
 
-    # GA400–GA408: rate_limit_options
+    # GA400-GA408: rate_limit_options
     if action in ("throttle", "rate_based_ban"):
         if "rate_limit_options" not in rule:
             results.append(
@@ -786,7 +786,7 @@ def _check_description(
         )
 
 
-# --- Deep per-rule checks (new GA310–GA431) ---------------------------------
+# --- Deep per-rule checks (new GA310-GA431) ---------------------------------
 
 
 def _check_match_deep(

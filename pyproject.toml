@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "octorules-google"
-version = "0.5.1"
+version = "0.5.2"
 description = "Google Cloud Armor provider for octorules"
 license = "Apache-2.0"
 requires-python = ">=3.10"
@@ -24,6 +24,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Networking :: Firewalls",
+    "Topic :: System :: Systems Administration",
 ]
 dependencies = [
     "octorules>=0.19.0",
@@ -41,6 +43,7 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/doctena-org/octorules-google"
 Repository = "https://github.com/doctena-org/octorules-google"
+Issues = "https://github.com/doctena-org/octorules-google/issues"
 
 [project.entry-points."octorules.providers"]
 google = "octorules_google:CloudArmorProvider"
@@ -52,7 +55,7 @@ target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP"]
+select = ["E", "F", "I", "W", "UP", "B", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
