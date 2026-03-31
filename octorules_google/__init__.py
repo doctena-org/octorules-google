@@ -1,41 +1,10 @@
 """Google Cloud Armor provider for octorules."""
 
-from octorules.phases import Phase, register_api_fields, register_phases
+from octorules.phases import register_api_fields, register_phases
 
 from octorules_google.linter import register_google_linter
-from octorules_google.provider import CloudArmorProvider
+from octorules_google.provider import _GCLOUD_PHASES, CloudArmorProvider
 from octorules_google.validate import validate_rules
-
-_GCLOUD_PHASES = [
-    Phase(
-        "gcloud_armor_custom_rules",
-        "gcloud_armor_custom",
-        None,
-        zone_level=True,
-        account_level=False,
-    ),
-    Phase(
-        "gcloud_armor_rate_rules",
-        "gcloud_armor_rate",
-        None,
-        zone_level=True,
-        account_level=False,
-    ),
-    Phase(
-        "gcloud_armor_preconfigured_rules",
-        "gcloud_armor_preconfigured",
-        None,
-        zone_level=True,
-        account_level=False,
-    ),
-    Phase(
-        "gcloud_armor_redirect_rules",
-        "gcloud_armor_redirect",
-        None,
-        zone_level=True,
-        account_level=False,
-    ),
-]
 
 GCLOUD_PHASE_NAMES: frozenset[str] = frozenset(p.friendly_name for p in _GCLOUD_PHASES)
 

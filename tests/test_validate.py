@@ -528,51 +528,12 @@ class TestRateLimitOptions:
         )
         assert "GA407" in _ids(validate_rules([r]))
 
-    def test_ga408_count_too_high_throttle(self):
-        r = _rule(
-            action="throttle",
-            rate_limit_options={
-                "conform_action": "allow",
-                "exceed_action": "deny-429",
-                "rate_limit_threshold": {"count": 1_000_001, "interval_sec": 60},
-            },
-        )
-        assert "GA408" in _ids(validate_rules([r]))
+    def test_ga408_removed_count_validated_by_ga421_only(self):
+        """Count range/type is now checked by GA421, not GA408.
 
-    def test_ga408_count_at_max_throttle(self):
-        r = _rule(
-            action="throttle",
-            rate_limit_options={
-                "conform_action": "allow",
-                "exceed_action": "deny-429",
-                "rate_limit_threshold": {"count": 1_000_000, "interval_sec": 60},
-            },
-        )
-        assert "GA408" not in _ids(validate_rules([r]))
-
-    def test_ga408_count_too_high_rate_based_ban(self):
-        r = _rule(
-            action="rate_based_ban",
-            rate_limit_options={
-                "conform_action": "allow",
-                "exceed_action": "deny-429",
-                "rate_limit_threshold": {"count": 10_001, "interval_sec": 60},
-            },
-        )
-        assert "GA408" in _ids(validate_rules([r]))
-
-    def test_ga408_count_at_max_rate_based_ban(self):
-        r = _rule(
-            action="rate_based_ban",
-            rate_limit_options={
-                "conform_action": "allow",
-                "exceed_action": "deny-429",
-                "rate_limit_threshold": {"count": 10_000, "interval_sec": 60},
-            },
-        )
-        assert "GA408" not in _ids(validate_rules([r]))
-
-    def test_ga408_count_zero(self):
+        GA408 was removed to avoid duplicate diagnostics. Verify that
+        count issues produce GA421 instead.
+        """
         r = _rule(
             action="throttle",
             rate_limit_options={
@@ -581,18 +542,9 @@ class TestRateLimitOptions:
                 "rate_limit_threshold": {"count": 0, "interval_sec": 60},
             },
         )
-        assert "GA408" in _ids(validate_rules([r]))
-
-    def test_ga408_count_bool(self):
-        r = _rule(
-            action="throttle",
-            rate_limit_options={
-                "conform_action": "allow",
-                "exceed_action": "deny-429",
-                "rate_limit_threshold": {"count": True, "interval_sec": 60},
-            },
-        )
-        assert "GA408" in _ids(validate_rules([r]))
+        results = validate_rules([r])
+        assert "GA408" not in _ids(results)
+        assert "GA421" in _ids(results)
 
 
 # ---------------------------------------------------------------------------
@@ -2878,3 +2830,145 @@ class TestGA409URLValidation:
         )
         ga409 = [x for x in validate_rules([r]) if x.rule_id == "GA409"]
         assert len(ga409) == 0
+
+
+# ---------------------------------------------------------------------------
+# GA103  Dead rules: parenthesized and IP-wildcard match-all detection
+# ---------------------------------------------------------------------------
+
+
+class TestDeadRulesExtended:
+    """GA103 should detect parenthesized 'true' and IP-wildcard match-all."""
+
+    def test_ga103_parenthesized_true(self):
+        """Rules after ((true)) match-all are unreachable."""
+        rules = [
+            _rule(ref="100", action="allow", match={"expr": {"expression": "((true))"}}),
+            _rule(
+                ref="200",
+                action="deny(403)",
+                match={"expr": {"expression": "origin.region_code == 'CN'"}},
+            ),
+        ]
+        assert "GA103" in _ids(validate_rules(rules))
+
+    def test_ga103_deeply_parenthesized_true(self):
+        """Rules after (((true))) match-all are unreachable."""
+        rules = [
+            _rule(ref="100", action="allow", match={"expr": {"expression": "(((true)))"}}),
+            _rule(
+                ref="200",
+                action="deny(403)",
+                match={"expr": {"expression": "origin.ip == '1.2.3.4'"}},
+            ),
+        ]
+        assert "GA103" in _ids(validate_rules(rules))
+
+    def test_ga103_ip_wildcard_match_all(self):
+        """Rules after SRC_IPS_V1 with ['*'] are unreachable."""
+        rules = [
+            _rule(
+                ref="100",
+                action="allow",
+                match={
+                    "versioned_expr": "SRC_IPS_V1",
+                    "config": {"src_ip_ranges": ["*"]},
+                },
+            ),
+            _rule(
+                ref="200",
+                action="deny(403)",
+                match={"expr": {"expression": "origin.region_code == 'CN'"}},
+            ),
+        ]
+        assert "GA103" in _ids(validate_rules(rules))
+
+    def test_ga103_ip_wildcard_non_wildcard_not_flagged(self):
+        """SRC_IPS_V1 with specific IPs is not a match-all."""
+        rules = [
+            _rule(
+                ref="100",
+                action="deny(403)",
+                match={
+                    "versioned_expr": "SRC_IPS_V1",
+                    "config": {"src_ip_ranges": ["10.0.0.0/8"]},
+                },
+            ),
+            _rule(
+                ref="200",
+                action="allow",
+                match={"expr": {"expression": "origin.region_code == 'US'"}},
+            ),
+        ]
+        assert "GA103" not in _ids(validate_rules(rules))
+
+    def test_ga103_lower_priority_before_parenthesized_not_flagged(self):
+        """Rules with lower priority than parenthesized match-all are not flagged."""
+        rules = [
+            _rule(
+                ref="50",
+                action="deny(403)",
+                match={"expr": {"expression": "origin.region_code == 'CN'"}},
+            ),
+            _rule(ref="100", action="allow", match={"expr": {"expression": "((true))"}}),
+        ]
+        ga103_results = [r for r in validate_rules(rules) if r.rule_id == "GA103"]
+        assert all(r.ref != "50" for r in ga103_results)
+
+
+# ---------------------------------------------------------------------------
+# GA408/GA421  No duplicate diagnostics for count range
+# ---------------------------------------------------------------------------
+
+
+class TestGA408GA421NoDuplicate:
+    """Verify count-range issues produce exactly one diagnostic, not both GA408 and GA421."""
+
+    def _rl_rule(self, action="throttle", **rlo_overrides):
+        rlo = {
+            "conform_action": "allow",
+            "exceed_action": "deny-429",
+            "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+        }
+        rlo.update(rlo_overrides)
+        return _rule(action=action, rate_limit_options=rlo)
+
+    def test_count_zero_only_ga421(self):
+        """count=0 should produce GA421 but NOT GA408."""
+        r = self._rl_rule(rate_limit_threshold={"count": 0, "interval_sec": 60})
+        results = validate_rules([r])
+        ids = _ids(results)
+        assert "GA421" in ids
+        assert "GA408" not in ids
+
+    def test_count_negative_only_ga421(self):
+        """count=-1 should produce GA421 but NOT GA408."""
+        r = self._rl_rule(rate_limit_threshold={"count": -1, "interval_sec": 60})
+        results = validate_rules([r])
+        ids = _ids(results)
+        assert "GA421" in ids
+        assert "GA408" not in ids
+
+    def test_count_bool_only_ga421(self):
+        """count=True (bool, not int) should produce GA421 but NOT GA408."""
+        r = self._rl_rule(rate_limit_threshold={"count": True, "interval_sec": 60})
+        results = validate_rules([r])
+        ids = _ids(results)
+        assert "GA421" in ids
+        assert "GA408" not in ids
+
+    def test_count_string_only_ga421(self):
+        """count='100' (string, not int) should produce GA421 but NOT GA408."""
+        r = self._rl_rule(rate_limit_threshold={"count": "100", "interval_sec": 60})
+        results = validate_rules([r])
+        ids = _ids(results)
+        assert "GA421" in ids
+        assert "GA408" not in ids
+
+    def test_count_too_high_only_ga421(self):
+        """count > max should produce GA421 but NOT GA408."""
+        r = self._rl_rule(rate_limit_threshold={"count": 1_000_001, "interval_sec": 60})
+        results = validate_rules([r])
+        ids = _ids(results)
+        assert "GA421" in ids
+        assert "GA408" not in ids

@@ -55,7 +55,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA100](#ga100--invalid-priority-must-be-non-negative-integer) | Invalid priority (must be non-negative integer) | ERROR |
 | [GA101](#ga101--priority-out-of-range-0-2147483646) | Priority out of range (0-2147483646) | ERROR |
 | [GA102](#ga102--duplicate-priority) | Duplicate priority | ERROR |
-| [GA103](#ga103--unreachable-rule-after-match-all) | Unreachable rule after match-all | WARNING |
+| [GA103](#ga103--unreachable-rule-after-match-all) | Unreachable rule after match-all (incl. `((true))`, `SRC_IPS_V1` with `["*"]`) | WARNING |
 | [GA104](#ga104--duplicate-cel-expression-across-rules) | Duplicate CEL expression across rules | WARNING |
 | [GA105](#ga105--inconsistent-enforce_on_key-across-rate-limit-rules) | Inconsistent enforce_on_key across rate-limit rules | WARNING |
 | [GA108](#ga108--duplicate-preconfigured-waf-rule-set-across-rules) | Duplicate preconfigured WAF rule set across rules | WARNING |
@@ -88,7 +88,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA405](#ga405--conform_action-must-be-allow) | conform_action must be 'allow' | ERROR |
 | [GA406](#ga406--invalid-exceed_action) | Invalid exceed_action | ERROR |
 | [GA407](#ga407--invalid-interval_sec-value) | Invalid interval_sec value | ERROR |
-| [GA408](#ga408--rate_limit_threshold-count-out-of-range) | rate_limit_threshold count out of range | ERROR |
+| [GA408](#ga408--rate_limit_threshold-interval_sec-validation) | rate_limit_threshold interval_sec validation (count moved to GA421) | ERROR |
 | [GA410](#ga410--invalid-ban_threshold-structure) | Invalid ban_threshold structure | ERROR |
 | [GA411](#ga411--invalid-exceed_redirect_optionstype) | Invalid exceed_redirect_options.type | ERROR |
 | [GA412](#ga412--exceed_redirect_optionstarget-must-be-valid-url-for-external_302) | exceed_redirect_options.target must be a valid URL for EXTERNAL_302 | ERROR |
@@ -99,7 +99,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA418](#ga418--invalid-http-header-name-in-cel-expression) | Invalid HTTP header name in CEL expression | WARNING |
 | [GA419](#ga419--redirect-target-must-not-be-empty) | Redirect target must not be empty | ERROR |
 | [GA420](#ga420--rate_limit_threshold-missing-required-subfields) | rate_limit_threshold missing required subfields | ERROR |
-| [GA421](#ga421--invalid-type-for-rate-limit-field) | Invalid type for rate limit field | ERROR |
+| [GA421](#ga421--invalid-type-for-rate-limit-field) | Invalid type for rate limit field + count-range validation | ERROR |
 | [GA422](#ga422--enforce_on_key-required-for-rate_based_ban-with-redirect-exceed_action) | enforce_on_key required for rate_based_ban with redirect exceed_action | WARNING |
 | [GA423](#ga423--invalid-enforce_on_key-value) | Invalid enforce_on_key value | ERROR |
 | [GA424](#ga424--enforce_on_key_name-required-for-http_headerhttp_cookie) | enforce_on_key_name required for HTTP_HEADER/HTTP_COOKIE | ERROR |
@@ -279,7 +279,7 @@ gcloud_armor_custom_rules:
 
 **Severity:** WARNING
 
-A rule with a `"true"` CEL expression matches all traffic. Any rule with a higher priority number (lower precedence) is unreachable because the match-all rule fires first.
+A rule with a `"true"` CEL expression matches all traffic. Any rule with a higher priority number (lower precedence) is unreachable because the match-all rule fires first. This now also detects parenthesized forms like `((true))` and IP-wildcard `SRC_IPS_V1` with `["*"]`.
 
 **Triggers on:**
 
@@ -1125,11 +1125,11 @@ The `interval_sec` in `rate_limit_threshold` must be one of the fixed values sup
 
 ---
 
-### GA408 -- rate_limit_threshold count out of range
+### GA408 -- rate_limit_threshold interval_sec validation
 
 **Severity:** ERROR
 
-The `count` in `rate_limit_threshold` must be a positive integer. For `throttle` actions, the maximum is 1,000,000. For `rate_based_ban` actions, the maximum is 10,000.
+Validates the `interval_sec` field in `rate_limit_threshold`. Count-range validation (minimum and maximum values) has been consolidated into GA421 to eliminate duplicate diagnostics.
 
 **Triggers on:**
 
@@ -1391,7 +1391,7 @@ The `rate_limit_threshold` object must be a dict containing both `count` and `in
 
 **Severity:** ERROR
 
-The `count` and `interval_sec` fields within `rate_limit_threshold` must be integers (not booleans, strings, or floats).
+The `count` and `interval_sec` fields within `rate_limit_threshold` must be integers (not booleans, strings, or floats). This rule now also covers count-range validation (previously in GA408): for `throttle` actions, the maximum count is 1,000,000; for `rate_based_ban` actions, the maximum is 10,000.
 
 **Triggers on:**
 

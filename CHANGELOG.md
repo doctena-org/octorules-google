@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.1] - 2026-03-31
+
+### Changed
+- GA103 (`unreachable rules`) now detects parenthesized match-all expressions like `((true))` and IP-wildcard `SRC_IPS_V1` with `["*"]`.
+- GA408 count-range validation consolidated into GA421 to eliminate duplicate diagnostics. GA408 is retained for `interval_sec` validation only.
+- Phase IDs are now derived from phase definitions instead of a hand-maintained frozenset.
+- `timeout=0` is now preserved instead of silently falling back to 30 seconds.
+
+### Fixed
+- `_IN_IP_RANGE_RE` regex was duplicated between `validate.py` and `audit.py`; now defined once and imported.
+
+### Added
+- Tests for `list_zones()` (success, empty, API errors, timeout passthrough, auth errors).
+- Tests for `create_custom_ruleset` and `delete_custom_ruleset`.
+- Tests for `ConfigError` on missing project (empty string, env var fallback).
+
 ## [0.6.0] - 2026-03-30
 
 ### Added

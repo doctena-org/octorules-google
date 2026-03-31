@@ -13,6 +13,7 @@ from google.api_core.exceptions import (
     Unauthorized,
 )
 from google.auth.exceptions import DefaultCredentialsError
+from octorules.config import ConfigError
 from octorules.provider.base import BaseProvider, Scope
 from octorules.provider.exceptions import ProviderAuthError, ProviderConnectionError, ProviderError
 
@@ -944,3 +945,130 @@ class TestRetryTransient:
         # _RETRY_BACKOFF = (1.0, 2.0, 4.0) — first retry uses index 0, second uses index 1
         sleep_mock.assert_any_call(1.0)
         sleep_mock.assert_any_call(2.0)
+
+
+class TestTimeoutZero:
+    """timeout=0 should be preserved, not silently replaced with 30s."""
+
+    def test_timeout_zero_preserved(self, mock_armor_client):
+        provider = CloudArmorProvider(client=mock_armor_client, project="p", timeout=0)
+        assert provider._timeout == 0
+
+    def test_timeout_zero_passed_to_api(self, mock_armor_client, security_policy):
+        mock_armor_client.get.return_value = security_policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p", timeout=0)
+        provider.resolve_zone_id("my-policy")
+        assert mock_armor_client.get.call_args.kwargs["timeout"] == 0
+
+    def test_timeout_none_defaults_to_30(self, mock_armor_client):
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        assert provider._timeout == 30.0
+
+
+class TestListZones:
+    """Tests for list_zones() zone discovery."""
+
+    def test_list_zones_success(self, mock_armor_client):
+        """Returns list of policy names."""
+        policy_a = MagicMock()
+        policy_a.name = "policy-a"
+        policy_b = MagicMock()
+        policy_b.name = "policy-b"
+        mock_armor_client.list.return_value = [policy_a, policy_b]
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        result = provider.list_zones()
+        assert result == ["policy-a", "policy-b"]
+        mock_armor_client.list.assert_called_once_with(
+            project="p",
+            timeout=30.0,
+        )
+
+    def test_list_zones_empty(self, mock_armor_client):
+        """Empty project returns empty list."""
+        mock_armor_client.list.return_value = []
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        assert provider.list_zones() == []
+
+    def test_list_zones_api_error(self, mock_armor_client):
+        """GoogleAPIError is wrapped as ProviderError."""
+        mock_armor_client.list.side_effect = GoogleAPIError("server error")
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        with pytest.raises(ProviderError, match="server error"):
+            provider.list_zones()
+
+    def test_list_zones_timeout_passthrough(self, mock_armor_client):
+        """Custom timeout is passed to the list API call."""
+        mock_armor_client.list.return_value = []
+        provider = CloudArmorProvider(client=mock_armor_client, project="p", timeout=99.0)
+        provider.list_zones()
+        assert mock_armor_client.list.call_args.kwargs["timeout"] == 99.0
+
+    def test_list_zones_auth_error(self, mock_armor_client):
+        """Auth errors are wrapped as ProviderAuthError."""
+        mock_armor_client.list.side_effect = Forbidden("forbidden")
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        with pytest.raises(ProviderAuthError):
+            provider.list_zones()
+
+
+class TestCreateDeleteCustomRuleset:
+    """create_custom_ruleset and delete_custom_ruleset are not supported."""
+
+    def test_create_raises(self, mock_armor_client):
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        with pytest.raises(ProviderError, match="not supported"):
+            provider.create_custom_ruleset(
+                _zs(), name="test", phase="gcloud_armor_custom", capacity=10
+            )
+
+    def test_create_with_description_raises(self, mock_armor_client):
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        with pytest.raises(ProviderError, match="not supported"):
+            provider.create_custom_ruleset(
+                _zs(), name="test", phase="gcloud_armor_custom", capacity=10, description="desc"
+            )
+
+    def test_delete_raises(self, mock_armor_client):
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        with pytest.raises(ProviderError, match="not supported"):
+            provider.delete_custom_ruleset(_zs(), "rs-1")
+
+
+class TestConfigErrorOnMissingProject:
+    """ConfigError raised when project is empty or not specified."""
+
+    def test_empty_string_project(self, mock_armor_client):
+        with pytest.raises(ConfigError, match="GCP project not specified"):
+            CloudArmorProvider(client=mock_armor_client, project="")
+
+    def test_none_project_no_env(self, mock_armor_client):
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(ConfigError, match="GCP project not specified"):
+                CloudArmorProvider(client=mock_armor_client, project=None)
+
+    def test_env_var_fallback(self, mock_armor_client):
+        with patch.dict("os.environ", {"GCLOUD_PROJECT": "env-proj"}):
+            provider = CloudArmorProvider(client=mock_armor_client, project=None)
+            assert provider._project == "env-proj"
+
+
+class TestPhaseIdsDerivedFromPhases:
+    """_GCLOUD_PHASE_IDS is derived from _GCLOUD_PHASES, not hand-maintained."""
+
+    def test_phase_ids_match_phases(self):
+        from octorules_google.provider import _GCLOUD_PHASE_IDS, _GCLOUD_PHASES
+
+        expected = frozenset(p.provider_id for p in _GCLOUD_PHASES)
+        assert _GCLOUD_PHASE_IDS == expected
+
+    def test_phase_ids_contains_all_four(self):
+        from octorules_google.provider import _GCLOUD_PHASE_IDS
+
+        assert _GCLOUD_PHASE_IDS == frozenset(
+            {
+                "gcloud_armor_custom",
+                "gcloud_armor_rate",
+                "gcloud_armor_preconfigured",
+                "gcloud_armor_redirect",
+            }
+        )

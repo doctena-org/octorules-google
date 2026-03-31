@@ -482,7 +482,7 @@ def _check_rate_limit_options(
             )
         )
 
-    # GA407 / GA408: rate_limit_threshold
+    # GA407: rate_limit_threshold.interval_sec
     rlt = rlo.get("rate_limit_threshold")
     if isinstance(rlt, dict):
         interval = rlt.get("interval_sec")
@@ -498,25 +498,8 @@ def _check_rate_limit_options(
                     suggestion=f"Valid values: {sorted(_VALID_INTERVALS)}",
                 )
             )
-
-        count = rlt.get("count")
-        if count is not None:
-            max_count = 10_000 if action == "rate_based_ban" else 1_000_000
-            bad = not _is_strict_int(count)
-            if bad or count < 1 or count > max_count:
-                results.append(
-                    _result(
-                        rule_id="GA408",
-                        severity=Severity.ERROR,
-                        message=(
-                            f"rate_limit_threshold.count must be 1\u2013{max_count:,}"
-                            f" for {action}, got {count!r}"
-                        ),
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.rate_limit_threshold.count",
-                    )
-                )
+        # NOTE: count type/range validation is handled by GA421 in
+        # _check_rate_limit_deep to avoid duplicate diagnostics.
 
 
 def _check_redirect_options(
@@ -2033,27 +2016,51 @@ def _check_duplicate_expressions(
             )
 
 
+def _is_match_all(rule: dict) -> bool:
+    """Return True if *rule* matches all traffic (catch-all).
+
+    Checks both CEL expressions that are always true (including parenthesized
+    forms like ``((true))``) and IP-wildcard ``SRC_IPS_V1`` with ``["*"]``.
+    """
+    match = rule.get("match")
+    if not isinstance(match, dict):
+        return False
+
+    # CEL expression check (handles "true", "((true))", etc.)
+    expr_obj = match.get("expr")
+    if isinstance(expr_obj, dict):
+        expression = expr_obj.get("expression", "")
+        if isinstance(expression, str) and expression.strip():
+            normalized = " ".join(expression.strip().lower().split())
+            if is_always_true(normalized):
+                return True
+
+    # IP-wildcard match-all: SRC_IPS_V1 with src_ip_ranges: ["*"]
+    ve = match.get("versioned_expr")
+    if ve == "SRC_IPS_V1":
+        config = match.get("config")
+        if isinstance(config, dict):
+            ranges = config.get("src_ip_ranges")
+            if isinstance(ranges, list) and ranges == ["*"]:
+                return True
+
+    return False
+
+
 def _check_dead_rules(
     rules: list[dict],
     results: list[LintResult],
     phase: str,
 ) -> None:
     """GA103: rules unreachable after a match-all rule."""
-    # Find the lowest-priority match-all rule (expression == "true")
+    # Find the lowest-priority match-all rule
     match_all_pri: int | None = None
     for rule in rules:
         ref = rule.get("ref", "")
         pri = _parse_priority(ref)
         if pri is None:
             continue
-        match = rule.get("match")
-        if not isinstance(match, dict):
-            continue
-        expr_obj = match.get("expr")
-        if not isinstance(expr_obj, dict):
-            continue
-        expression = expr_obj.get("expression", "")
-        if isinstance(expression, str) and expression.strip().lower() == "true":
+        if _is_match_all(rule):
             if match_all_pri is None or pri < match_all_pri:
                 match_all_pri = pri
 

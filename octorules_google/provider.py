@@ -16,21 +16,49 @@ from google.api_core.exceptions import Forbidden, GoogleAPIError, NotFound, Unau
 from google.auth.exceptions import DefaultCredentialsError
 from google.cloud import compute_v1
 from octorules.config import ConfigError
+from octorules.phases import Phase
 from octorules.provider.base import PhaseRulesResult, Scope
 from octorules.provider.exceptions import ProviderError
 from octorules.provider.utils import make_error_wrapper
 
 log = logging.getLogger(__name__)
 
-# Phase identifiers registered by this provider.
-_GCLOUD_PHASE_IDS = frozenset(
-    {
+# Phase definitions for Google Cloud Armor — single source of truth.
+# __init__.py imports _GCLOUD_PHASES for registration; _GCLOUD_PHASE_IDS is
+# derived here so the two can never drift out of sync.
+
+_GCLOUD_PHASES = [
+    Phase(
+        "gcloud_armor_custom_rules",
         "gcloud_armor_custom",
+        None,
+        zone_level=True,
+        account_level=False,
+    ),
+    Phase(
+        "gcloud_armor_rate_rules",
         "gcloud_armor_rate",
+        None,
+        zone_level=True,
+        account_level=False,
+    ),
+    Phase(
+        "gcloud_armor_preconfigured_rules",
         "gcloud_armor_preconfigured",
+        None,
+        zone_level=True,
+        account_level=False,
+    ),
+    Phase(
+        "gcloud_armor_redirect_rules",
         "gcloud_armor_redirect",
-    }
-)
+        None,
+        zone_level=True,
+        account_level=False,
+    ),
+]
+
+_GCLOUD_PHASE_IDS = frozenset(p.provider_id for p in _GCLOUD_PHASES)
 
 # The default rule (priority 2147483647) is managed by GCP, not octorules.
 _DEFAULT_RULE_PRIORITY = 2147483647
@@ -177,7 +205,7 @@ class CloudArmorProvider:
                 " (set 'project' in provider config or GCLOUD_PROJECT env var)"
             )
         self._max_workers = max_workers
-        self._timeout = timeout or 30.0
+        self._timeout = timeout if timeout is not None else 30.0
 
     # -- Properties --
 
