@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.0] - 2026-04-02
+
+### Added
+- GA430: ``ban_duration_sec`` very short (< 60 seconds) warning.
+- GA433: Redirect URL exceeds 1,024 characters (WARNING).
+
+### Changed
+- Unsupported operations (`create_custom_ruleset`, `delete_custom_ruleset`,
+  `create_list`, etc.) now raise `ConfigError` instead of `ProviderError`, since
+  these are configuration mistakes, not transient API failures.
+- `_classify_phase()` logs a warning for unrecognized rule actions instead of
+  silently classifying them as `custom_rules`.
+- Removed CI `concurrency` blocks from lint and test workflows.
+- Removed redundant `pip install yamllint` from lint workflow (now in dev deps).
+
 ## [0.6.1] - 2026-03-31
 
 ### Changed

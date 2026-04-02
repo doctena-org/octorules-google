@@ -583,6 +583,21 @@ def _check_redirect_options(
                         field="redirect_options.target",
                     )
                 )
+            # GA433: redirect URL length
+            if len(target) > 1024:
+                results.append(
+                    _result(
+                        rule_id="GA433",
+                        severity=Severity.WARNING,
+                        message=(
+                            f"redirect_options.target length ({len(target)}) exceeds"
+                            " 1024 characters"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="redirect_options.target",
+                    )
+                )
 
 
 def _check_match(
@@ -1470,6 +1485,21 @@ def _check_rate_limit_deep(
                         phase=phase,
                         ref=ref,
                         field="rate_limit_options.ban_duration_sec",
+                    )
+                )
+            elif bds < 60:
+                results.append(
+                    _result(
+                        rule_id="GA430",
+                        severity=Severity.WARNING,
+                        message=(
+                            f"ban_duration_sec {bds} is very short"
+                            " (< 60 seconds may be ineffective)"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.ban_duration_sec",
+                        suggestion="Consider a duration of 60 seconds or more",
                     )
                 )
             elif bds > _MAX_BAN_DURATION:

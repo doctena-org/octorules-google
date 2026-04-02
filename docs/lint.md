@@ -1,6 +1,6 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **67 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **69 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
 
 ### Suppressing rules
 
@@ -85,6 +85,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA403](#ga403--missing-required-field-in-rate_limit_options) | Missing required field in rate_limit_options | ERROR |
 | [GA404](#ga404--external_302-redirect-requires-target-url) | EXTERNAL_302 redirect requires 'target' URL | ERROR |
 | [GA409](#ga409--redirect-target-must-be-valid-url-for-external_302) | redirect_options.target must be a valid URL for EXTERNAL_302 | ERROR |
+| [GA433](#ga433--redirect-url-exceeds-1024-characters) | Redirect URL exceeds 1,024 characters | WARNING |
 | [GA405](#ga405--conform_action-must-be-allow) | conform_action must be 'allow' | ERROR |
 | [GA406](#ga406--invalid-exceed_action) | Invalid exceed_action | ERROR |
 | [GA407](#ga407--invalid-interval_sec-value) | Invalid interval_sec value | ERROR |
@@ -106,6 +107,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA425](#ga425--ban_duration_sec-required-for-rate_based_ban) | ban_duration_sec required for rate_based_ban | ERROR |
 | [GA426](#ga426--invalid-ban_duration_sec-must-be-positive-integer) | Invalid ban_duration_sec (must be positive integer) | ERROR |
 | [GA427](#ga427--ban_duration_sec-exceeds-maximum-3600-seconds) | ban_duration_sec exceeds maximum (3600 seconds) | ERROR |
+| [GA430](#ga430--ban_duration_sec-very-short) | ban_duration_sec very short (< 60 seconds) | WARNING |
 | [GA428](#ga428--invalid-enforce_on_key_name-value) | Invalid enforce_on_key_name value | WARNING |
 | [GA429](#ga429--ban_duration_sec-is-only-valid-for-rate_based_ban) | ban_duration_sec is only valid for rate_based_ban | WARNING |
 | [GA431](#ga431--redirect-exceed_action-requires-exceed_redirect_options) | redirect exceed_action requires exceed_redirect_options | ERROR |
@@ -1789,3 +1791,19 @@ gcloud_armor_custom_rules:
 ```
 
 **Fix:** Fix the expression to match the intended traffic, or remove the rule. Common causes: leftover `"false"` from debugging, or a typo that makes the condition logically impossible (e.g. `origin.region_code == 'XX'` with a non-existent country code).
+
+### GA430 -- ban_duration_sec very short
+
+**Severity:** WARNING
+
+`ban_duration_sec` is less than 60 seconds. Very short ban durations may be ineffective — by the time the ban takes effect the attacker has already completed their burst.
+
+**Fix:** Consider a duration of 60 seconds or more for meaningful rate-based bans.
+
+### GA433 -- Redirect URL exceeds 1,024 characters
+
+**Severity:** WARNING
+
+The `redirect_options.target` URL exceeds 1,024 characters. Long redirect URLs may be rejected by browsers or intermediate proxies.
+
+**Fix:** Shorten the redirect URL.

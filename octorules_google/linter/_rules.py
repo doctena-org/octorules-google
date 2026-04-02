@@ -111,6 +111,9 @@ GA426 = RuleMeta(
 GA427 = RuleMeta(
     "GA427", "rate_limit", "ban_duration_sec exceeds maximum (3600 seconds)", Severity.ERROR
 )
+GA430 = RuleMeta(
+    "GA430", "rate_limit", "ban_duration_sec very short (< 60 seconds)", Severity.WARNING
+)
 GA428 = RuleMeta(
     "GA428",
     "rate_limit",
@@ -136,6 +139,12 @@ GA432 = RuleMeta(
     "rate_limit",
     "Conflicting rate-limit options",
     Severity.ERROR,
+)
+GA433 = RuleMeta(
+    "GA433",
+    "redirect",
+    "Redirect URL exceeds 1024 characters",
+    Severity.WARNING,
 )
 
 # GA4xx continued — Redirect target, ban_threshold, exceed_redirect, enforce_on_key_configs

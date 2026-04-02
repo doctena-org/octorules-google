@@ -18,7 +18,6 @@ from google.cloud import compute_v1
 from octorules.config import ConfigError
 from octorules.phases import Phase
 from octorules.provider.base import PhaseRulesResult, Scope
-from octorules.provider.exceptions import ProviderError
 from octorules.provider.utils import make_error_wrapper
 
 log = logging.getLogger(__name__)
@@ -129,6 +128,9 @@ def _is_redirect_rule(rule: dict) -> bool:
     return rule.get("action") == "redirect"
 
 
+_KNOWN_CUSTOM_ACTIONS = frozenset({"allow", "deny"})
+
+
 def _classify_phase(rule: dict) -> str:
     """Return the Cloud Armor phase id for a rule."""
     if _is_rate_rule(rule):
@@ -137,6 +139,13 @@ def _classify_phase(rule: dict) -> str:
         return "gcloud_armor_redirect"
     if _is_preconfigured_rule(rule):
         return "gcloud_armor_preconfigured"
+    action = rule.get("action")
+    if action and action not in _KNOWN_CUSTOM_ACTIONS and not str(action).startswith("deny("):
+        log.warning(
+            "Unrecognized action %r for rule priority %s, classifying as custom_rules",
+            action,
+            rule.get("priority", rule.get("ref", "?")),
+        )
     return "gcloud_armor_custom"
 
 
@@ -411,20 +420,20 @@ class CloudArmorProvider:
 
     @_wrap_provider_errors
     def put_custom_ruleset(self, scope: Scope, ruleset_id: str, rules: list[dict]) -> int:
-        """Raise ProviderError; Cloud Armor does not support custom rulesets."""
-        raise ProviderError("Custom rulesets are not supported by Cloud Armor")
+        """Raise ConfigError; Cloud Armor does not support custom rulesets."""
+        raise ConfigError("Custom rulesets are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def create_custom_ruleset(
         self, scope: Scope, name: str, phase: str, capacity: int, description: str = ""
     ) -> dict:
-        """Raise ProviderError; Cloud Armor does not support custom rulesets."""
-        raise ProviderError("Custom rulesets are not supported by Cloud Armor")
+        """Raise ConfigError; Cloud Armor does not support custom rulesets."""
+        raise ConfigError("Custom rulesets are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def delete_custom_ruleset(self, scope: Scope, ruleset_id: str) -> None:
-        """Raise ProviderError; Cloud Armor does not support custom rulesets."""
-        raise ProviderError("Custom rulesets are not supported by Cloud Armor")
+        """Raise ConfigError; Cloud Armor does not support custom rulesets."""
+        raise ConfigError("Custom rulesets are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def get_all_custom_rulesets(
@@ -442,18 +451,18 @@ class CloudArmorProvider:
 
     @_wrap_provider_errors
     def create_list(self, scope: Scope, name: str, kind: str, description: str = "") -> dict:
-        """Raise ProviderError; Cloud Armor uses inline IP ranges, not lists."""
-        raise ProviderError("Lists are not supported by Cloud Armor (use inline IP ranges)")
+        """Raise ConfigError; Cloud Armor uses inline IP ranges, not lists."""
+        raise ConfigError("Lists are not supported by Cloud Armor (use inline IP ranges)")
 
     @_wrap_provider_errors
     def delete_list(self, scope: Scope, list_id: str) -> None:
-        """Raise ProviderError; Cloud Armor does not support lists."""
-        raise ProviderError("Lists are not supported by Cloud Armor")
+        """Raise ConfigError; Cloud Armor does not support lists."""
+        raise ConfigError("Lists are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def update_list_description(self, scope: Scope, list_id: str, description: str) -> None:
-        """Raise ProviderError; Cloud Armor does not support lists."""
-        raise ProviderError("Lists are not supported by Cloud Armor")
+        """Raise ConfigError; Cloud Armor does not support lists."""
+        raise ConfigError("Lists are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def get_list_items(self, scope: Scope, list_id: str) -> list[dict]:
@@ -462,8 +471,8 @@ class CloudArmorProvider:
 
     @_wrap_provider_errors
     def put_list_items(self, scope: Scope, list_id: str, items: list[dict]) -> str:
-        """Raise ProviderError; Cloud Armor does not support lists."""
-        raise ProviderError("Lists are not supported by Cloud Armor")
+        """Raise ConfigError; Cloud Armor does not support lists."""
+        raise ConfigError("Lists are not supported by Cloud Armor")
 
     @_wrap_provider_errors
     def poll_bulk_operation(

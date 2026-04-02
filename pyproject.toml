@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "octorules-google"
-version = "0.6.1"
+version = "0.7.0"
 description = "Google Cloud Armor provider for octorules"
 license = "Apache-2.0"
 requires-python = ">=3.10"
@@ -37,6 +37,7 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "ruff>=0.4.0",
+    "yamllint>=1.35.0",
     "build",
 ]
 
@@ -56,6 +57,10 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use intentional unicode chars and regex metacharacters in match= patterns.
+"tests/*" = ["RUF002", "RUF043"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1031,6 +1031,21 @@ class TestRateLimitDeep:
         r = self._ban_rule(ban_duration_sec=86400)
         assert "GA427" in _ids(validate_rules([r]))
 
+    # --- GA430: ban_duration_sec very short ---
+
+    def test_ga430_very_short(self):
+        r = self._ban_rule(ban_duration_sec=10)
+        assert "GA430" in _ids(validate_rules([r]))
+
+    def test_ga430_boundary_59(self):
+        """59 seconds is below the 60s threshold — should trigger."""
+        r = self._ban_rule(ban_duration_sec=59)
+        assert "GA430" in _ids(validate_rules([r]))
+
+    def test_ga430_at_60_ok(self):
+        r = self._ban_rule(ban_duration_sec=60)
+        assert "GA430" not in _ids(validate_rules([r]))
+
     def test_ga427_not_triggered_for_invalid_type(self):
         """GA426 fires for non-int, GA427 should not also fire."""
         r = self._ban_rule(ban_duration_sec="9999")
@@ -1656,6 +1671,36 @@ class TestGA409:
             redirect_options={"type": "GOOGLE_RECAPTCHA"},
         )
         assert "GA409" not in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA433  Redirect URL length
+# ---------------------------------------------------------------------------
+
+
+class TestGA433:
+    def test_ga433_url_too_long(self):
+        long_url = "https://example.com/" + "a" * 1010
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": long_url},
+        )
+        assert "GA433" in _ids(validate_rules([r]))
+
+    def test_ga433_url_at_limit(self):
+        url = "https://example.com/" + "a" * 1004  # exactly 1024
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": url},
+        )
+        assert "GA433" not in _ids(validate_rules([r]))
+
+    def test_ga433_short_url_ok(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "EXTERNAL_302", "target": "https://example.com/short"},
+        )
+        assert "GA433" not in _ids(validate_rules([r]))
 
 
 # ---------------------------------------------------------------------------

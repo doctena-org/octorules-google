@@ -249,7 +249,7 @@ class TestCustomRulesets:
 
     def test_put_raises(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
+        with pytest.raises(ConfigError, match="not supported"):
             provider.put_custom_ruleset(_zs(), "rs-1", [])
 
     def test_get_all_returns_empty(self, mock_armor_client):
@@ -266,12 +266,12 @@ class TestLists:
 
     def test_create_raises(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
+        with pytest.raises(ConfigError, match="not supported"):
             provider.create_list(_zs(), "blocklist", "ip")
 
     def test_delete_raises(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
+        with pytest.raises(ConfigError, match="not supported"):
             provider.delete_list(_zs(), "ip-1")
 
     def test_get_items_returns_empty(self, mock_armor_client):
@@ -280,7 +280,7 @@ class TestLists:
 
     def test_put_items_raises(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
+        with pytest.raises(ConfigError, match="not supported"):
             provider.put_list_items(_zs(), "ip-1", [])
 
     def test_poll_returns_completed(self, mock_armor_client):
@@ -478,6 +478,36 @@ class TestRuleClassification:
             "match": {"expr": {"expression": "evaluatePreconfiguredExpr('xss-stable')"}},
         }
         assert _classify_phase(rule) == "gcloud_armor_preconfigured"
+
+    def test_unknown_action_warns(self, caplog):
+        from octorules_google.provider import _classify_phase
+
+        result = _classify_phase({"action": "new_future_action", "priority": 42, "match": {}})
+        assert result == "gcloud_armor_custom"
+        assert "Unrecognized action" in caplog.text
+        assert "new_future_action" in caplog.text
+
+    def test_deny_with_status_no_warning(self, caplog):
+        from octorules_google.provider import _classify_phase
+
+        result = _classify_phase({"action": "deny(502)", "priority": 10, "match": {}})
+        assert result == "gcloud_armor_custom"
+        assert "Unrecognized action" not in caplog.text
+
+    def test_plain_deny_no_warning(self, caplog):
+        """Plain 'deny' (no parens) is a known action, should not warn."""
+        from octorules_google.provider import _classify_phase
+
+        result = _classify_phase({"action": "deny", "priority": 10, "match": {}})
+        assert result == "gcloud_armor_custom"
+        assert "Unrecognized action" not in caplog.text
+
+    def test_allow_no_warning(self, caplog):
+        from octorules_google.provider import _classify_phase
+
+        result = _classify_phase({"action": "allow", "priority": 10, "match": {}})
+        assert result == "gcloud_armor_custom"
+        assert "Unrecognized action" not in caplog.text
 
 
 class TestRuleNormalization:
@@ -1016,21 +1046,21 @@ class TestCreateDeleteCustomRuleset:
 
     def test_create_raises(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
+        with pytest.raises(ConfigError, match="not supported"):
             provider.create_custom_ruleset(
                 _zs(), name="test", phase="gcloud_armor_custom", capacity=10
             )
 
     def test_create_with_description_raises(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
+        with pytest.raises(ConfigError, match="not supported"):
             provider.create_custom_ruleset(
                 _zs(), name="test", phase="gcloud_armor_custom", capacity=10, description="desc"
             )
 
     def test_delete_raises(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
-        with pytest.raises(ProviderError, match="not supported"):
+        with pytest.raises(ConfigError, match="not supported"):
             provider.delete_custom_ruleset(_zs(), "rs-1")
 
 
@@ -1072,3 +1102,76 @@ class TestPhaseIdsDerivedFromPhases:
                 "gcloud_armor_redirect",
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# _denormalize_rule edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestDenormalizeEdgeCases:
+    def test_non_numeric_ref_raises(self):
+        """Non-numeric ref in _denormalize_rule raises ValueError."""
+        from octorules_google.provider import _denormalize_rule
+
+        with pytest.raises(ValueError):
+            _denormalize_rule({"ref": "abc", "action": "allow"})
+
+    def test_missing_ref_defaults_to_zero(self):
+        """Missing ref defaults to priority 0."""
+        from octorules_google.provider import _denormalize_rule
+
+        result = _denormalize_rule({"action": "allow"})
+        assert result["priority"] == 0
+        assert "ref" not in result
+
+
+# ---------------------------------------------------------------------------
+# Default rule filtering
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultRuleFiltering:
+    def test_default_rule_filtered(self, mock_armor_client):
+        """The GCP default rule (priority 2147483647) is excluded from results."""
+        policy = {
+            "rules": [
+                {
+                    "priority": 100,
+                    "action": "deny(403)",
+                    "match": {"expr": {"expression": "true"}},
+                },
+                {
+                    "priority": 2147483647,
+                    "action": "deny(403)",
+                    "match": {
+                        "versioned_expr": "SRC_IPS_V1",
+                        "config": {"src_ip_ranges": ["*"]},
+                    },
+                },
+            ],
+        }
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        mock_armor_client.get.return_value = policy
+        rules = provider.get_phase_rules(_zs(zone_id="policy-1"), "gcloud_armor_custom")
+        assert len(rules) == 1
+        assert rules[0]["ref"] == "100"
+
+    def test_default_only_returns_empty(self, mock_armor_client):
+        """Policy with only the default rule returns empty list."""
+        policy = {
+            "rules": [
+                {
+                    "priority": 2147483647,
+                    "action": "deny(403)",
+                    "match": {
+                        "versioned_expr": "SRC_IPS_V1",
+                        "config": {"src_ip_ranges": ["*"]},
+                    },
+                },
+            ],
+        }
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        mock_armor_client.get.return_value = policy
+        rules = provider.get_phase_rules(_zs(zone_id="policy-1"), "gcloud_armor_custom")
+        assert rules == []
