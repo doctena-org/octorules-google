@@ -1,7 +1,5 @@
 """Tests for Google Cloud Armor rule validation."""
 
-from __future__ import annotations
-
 import pytest
 from octorules.linter.engine import LintResult
 
@@ -26,8 +24,6 @@ def _ids(results: list[LintResult]) -> list[str]:
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
-
-
 class TestValidRules:
     def test_no_errors(self):
         r = _rule(match={"expr": {"expression": "origin.region_code == 'US'"}})
@@ -52,8 +48,6 @@ class TestValidRules:
 # ---------------------------------------------------------------------------
 # GA001-GA003  Structural checks
 # ---------------------------------------------------------------------------
-
-
 class TestStructural:
     def test_ga001_missing_ref(self):
         r = _rule()
@@ -80,8 +74,6 @@ class TestStructural:
 # ---------------------------------------------------------------------------
 # GA100-GA104  Priority & cross-rule checks
 # ---------------------------------------------------------------------------
-
-
 class TestPriority:
     def test_ga100_not_integer_string(self):
         assert "GA100" in _ids(validate_rules([_rule(ref="abc")]))
@@ -190,8 +182,6 @@ class TestDuplicateExpressions:
 # ---------------------------------------------------------------------------
 # GA200-GA201  Action checks
 # ---------------------------------------------------------------------------
-
-
 class TestActions:
     @pytest.mark.parametrize(
         "action",
@@ -236,8 +226,6 @@ class TestActions:
 # ---------------------------------------------------------------------------
 # GA300-GA306  Match checks
 # ---------------------------------------------------------------------------
-
-
 class TestMatch:
     def test_ga300_both_expr_and_config(self):
         match = {
@@ -391,12 +379,73 @@ class TestCidrChecks:
         match = {"config": {"src_ip_ranges": ["fd00::/8"]}, "versioned_expr": "SRC_IPS_V1"}
         assert "GA503" in _ids(validate_rules([_rule(match=match)]))
 
+    # --- GA307: CIDR host bits normalization warning ---
+
+    def test_ga307_host_bits_set(self):
+        """CIDR with host bits set emits GA307 warning about normalization."""
+        match = {
+            "config": {"src_ip_ranges": ["10.0.0.1/24"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        results = validate_rules([_rule(match=match)])
+        ids = _ids(results)
+        assert "GA307" in ids
+        assert "GA301" not in ids
+        ga307 = [r for r in results if r.rule_id == "GA307"]
+        assert "10.0.0.0/24" in ga307[0].message
+
+    def test_ga307_no_host_bits(self):
+        """CIDR without host bits set does not emit GA307."""
+        match = {
+            "config": {"src_ip_ranges": ["10.0.0.0/24"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        assert "GA307" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga307_host_address_no_warning(self):
+        """/32 host address is exact — no normalization needed."""
+        match = {
+            "config": {"src_ip_ranges": ["10.0.0.1/32"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        assert "GA307" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga307_ipv6_host_bits(self):
+        """IPv6 CIDR with host bits set emits GA307."""
+        match = {
+            "config": {"src_ip_ranges": ["2001:db8::1/32"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        results = validate_rules([_rule(match=match)])
+        ids = _ids(results)
+        assert "GA307" in ids
+        assert "GA301" not in ids
+
+    def test_ga307_invalid_cidr_still_ga301(self):
+        """Completely invalid CIDR still produces GA301, not GA307."""
+        match = {
+            "config": {"src_ip_ranges": ["not-a-cidr"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        ids = _ids(validate_rules([_rule(match=match)]))
+        assert "GA301" in ids
+        assert "GA307" not in ids
+
+    def test_ga307_suggestion_contains_normalized(self):
+        """GA307 suggestion includes the normalized CIDR."""
+        match = {
+            "config": {"src_ip_ranges": ["192.168.1.5/24"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        results = validate_rules([_rule(match=match)])
+        ga307 = [r for r in results if r.rule_id == "GA307"]
+        assert len(ga307) == 1
+        assert "192.168.1.0/24" in ga307[0].suggestion
+
 
 # ---------------------------------------------------------------------------
 # GA400-GA408  Rate limit options
 # ---------------------------------------------------------------------------
-
-
 class TestRateLimitOptions:
     def test_ga400_throttle_missing_rate_limit(self):
         assert "GA400" in _ids(validate_rules([_rule(action="throttle")]))
@@ -550,8 +599,6 @@ class TestRateLimitOptions:
 # ---------------------------------------------------------------------------
 # GA401-GA404  Redirect options
 # ---------------------------------------------------------------------------
-
-
 class TestRedirectOptions:
     def test_ga401_redirect_missing_options(self):
         assert "GA401" in _ids(validate_rules([_rule(action="redirect")]))
@@ -592,8 +639,6 @@ class TestRedirectOptions:
 # ---------------------------------------------------------------------------
 # GA500  Description length
 # ---------------------------------------------------------------------------
-
-
 class TestDescription:
     def test_ga500_too_long(self):
         r = _rule(description="x" * 1025)
@@ -610,8 +655,6 @@ class TestDescription:
 # ---------------------------------------------------------------------------
 # GA310-GA314  Expression / match deep validation
 # ---------------------------------------------------------------------------
-
-
 class TestMatchDeep:
     # --- GA310: Unknown field reference ---
 
@@ -840,8 +883,6 @@ class TestMatchDeep:
 # ---------------------------------------------------------------------------
 # GA420-GA426  Rate limit deep validation
 # ---------------------------------------------------------------------------
-
-
 class TestRateLimitDeep:
     def _rl_rule(self, **rlo_overrides):
         """Build a rate-limit rule with overrides to rate_limit_options."""
@@ -1115,8 +1156,6 @@ class TestRateLimitDeep:
 # ---------------------------------------------------------------------------
 # GA429, GA431, GA432  Action parameter validation
 # ---------------------------------------------------------------------------
-
-
 class TestActionParams:
     # --- GA429: ban_duration_sec on throttle ---
 
@@ -1258,8 +1297,6 @@ class TestActionParams:
 # ---------------------------------------------------------------------------
 # GA105, GA108  Cross-rule analysis
 # ---------------------------------------------------------------------------
-
-
 class TestCrossRuleAnalysis:
     # --- GA105: Inconsistent enforce_on_key ---
 
@@ -1391,8 +1428,6 @@ class TestCrossRuleAnalysis:
 # ---------------------------------------------------------------------------
 # GA600  Preview mode
 # ---------------------------------------------------------------------------
-
-
 class TestPreview:
     def test_ga600_preview_true(self):
         r = _rule(preview=True)
@@ -1432,8 +1467,6 @@ class TestPreview:
 # ---------------------------------------------------------------------------
 # GA601  Always-true expression
 # ---------------------------------------------------------------------------
-
-
 class TestAlwaysTrue:
     def test_ga601_expression_true(self):
         match = {"expr": {"expression": "true"}}
@@ -1504,8 +1537,6 @@ class TestAlwaysTrue:
 # ---------------------------------------------------------------------------
 # GA602  Always-false expression
 # ---------------------------------------------------------------------------
-
-
 class TestAlwaysFalse:
     def test_ga602_expression_false(self):
         match = {"expr": {"expression": "false"}}
@@ -1557,8 +1588,6 @@ class TestAlwaysFalse:
 # ---------------------------------------------------------------------------
 # Integration / edge cases
 # ---------------------------------------------------------------------------
-
-
 class TestEdgeCases:
     def test_multiple_errors_same_rule(self):
         r = {"action": "invalid"}
@@ -1634,8 +1663,6 @@ class TestEdgeCases:
 # ---------------------------------------------------------------------------
 # GA409  Redirect target must be valid URL for EXTERNAL_302
 # ---------------------------------------------------------------------------
-
-
 class TestGA409:
     def test_ga409_external_302_invalid_url(self):
         r = _rule(
@@ -1676,8 +1703,6 @@ class TestGA409:
 # ---------------------------------------------------------------------------
 # GA433  Redirect URL length
 # ---------------------------------------------------------------------------
-
-
 class TestGA433:
     def test_ga433_url_too_long(self):
         long_url = "https://example.com/" + "a" * 1010
@@ -1706,8 +1731,6 @@ class TestGA433:
 # ---------------------------------------------------------------------------
 # GA410  ban_threshold structure validation
 # ---------------------------------------------------------------------------
-
-
 class TestGA410:
     def _ban_rule_with_bt(self, **bt_overrides):
         bt = {"count": 5, "interval_sec": 60}
@@ -1790,8 +1813,6 @@ class TestGA410:
 # ---------------------------------------------------------------------------
 # GA411  exceed_redirect_options.type validation
 # ---------------------------------------------------------------------------
-
-
 class TestGA411:
     def test_ga411_invalid_type(self):
         r = _rule(
@@ -1833,8 +1854,6 @@ class TestGA411:
 # ---------------------------------------------------------------------------
 # GA412  exceed_redirect_options.target URL validation for EXTERNAL_302
 # ---------------------------------------------------------------------------
-
-
 class TestGA412:
     def test_ga412_invalid_url(self):
         r = _rule(
@@ -1876,8 +1895,6 @@ class TestGA412:
 # ---------------------------------------------------------------------------
 # GA413  Invalid regex pattern in CEL matches()
 # ---------------------------------------------------------------------------
-
-
 class TestGA413:
     def test_ga413_invalid_regex(self):
         match = {"expr": {"expression": "request.path.matches('[invalid')"}}
@@ -1902,8 +1919,6 @@ class TestGA413:
 # ---------------------------------------------------------------------------
 # GA414  enforce_on_key_configs structure validation
 # ---------------------------------------------------------------------------
-
-
 class TestGA414:
     def _rl_rule_with_configs(self, configs, **extra):
         rlo = {
@@ -1962,8 +1977,6 @@ class TestGA414:
 # ---------------------------------------------------------------------------
 # GA415  Duplicate enforce_on_key_configs entries
 # ---------------------------------------------------------------------------
-
-
 class TestGA415:
     def _rl_rule_with_configs(self, configs):
         rlo = {
@@ -1999,8 +2012,6 @@ class TestGA415:
 # ---------------------------------------------------------------------------
 # GA416  Preconfigured WAF sensitivity level 0-4
 # ---------------------------------------------------------------------------
-
-
 class TestGA416:
     def test_ga416_sensitivity_too_high(self):
         expr = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 5})"
@@ -2031,8 +2042,6 @@ class TestGA416:
 # ---------------------------------------------------------------------------
 # GA418  Invalid header name in CEL bracket access
 # ---------------------------------------------------------------------------
-
-
 class TestGA418:
     def test_ga418_valid_header(self):
         match = {"expr": {"expression": "request.headers['X-Custom-Header'] == 'v'"}}
@@ -2061,8 +2070,6 @@ class TestGA418:
 # ---------------------------------------------------------------------------
 # GA419  Empty or whitespace-only redirect target
 # ---------------------------------------------------------------------------
-
-
 class TestGA419:
     def test_ga419_empty_redirect_target(self):
         r = _rule(
@@ -2113,8 +2120,6 @@ class TestGA419:
 # ---------------------------------------------------------------------------
 # GA315  Country code validation in CEL
 # ---------------------------------------------------------------------------
-
-
 class TestGA315:
     def test_ga315_valid_country_code(self):
         match = {"expr": {"expression": "origin.region_code == 'US'"}}
@@ -2176,8 +2181,6 @@ class TestGA315:
 # ---------------------------------------------------------------------------
 # GA316  HTTP method validation in CEL
 # ---------------------------------------------------------------------------
-
-
 class TestGA316:
     def test_ga316_valid_method(self):
         match = {"expr": {"expression": "request.method == 'GET'"}}
@@ -2228,8 +2231,6 @@ class TestGA316:
 # ---------------------------------------------------------------------------
 # GA317  CIDR validation in inIpRange()
 # ---------------------------------------------------------------------------
-
-
 class TestGA317:
     def test_ga317_valid_cidr(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '1.2.3.0/24')"}}
@@ -2287,8 +2288,6 @@ class TestGA317:
 # ---------------------------------------------------------------------------
 # GA318  CEL type mismatch detection
 # ---------------------------------------------------------------------------
-
-
 class TestGA318:
     def test_ga318_string_field_with_int(self):
         match = {"expr": {"expression": "origin.ip == 42"}}
@@ -2349,8 +2348,6 @@ class TestGA318:
 # ---------------------------------------------------------------------------
 # GA319  Case sensitivity reminder
 # ---------------------------------------------------------------------------
-
-
 class TestGA319:
     def test_ga319_mixed_case_path(self):
         match = {"expr": {"expression": "request.path == '/Admin'"}}
@@ -2408,8 +2405,6 @@ class TestGA319:
 # ---------------------------------------------------------------------------
 # GA502  Tier-aware rule count limits
 # ---------------------------------------------------------------------------
-
-
 class TestGA502:
     def test_ga502_standard_under_limit(self):
         from octorules_google.validate import validate_rule_count
@@ -2568,8 +2563,6 @@ class TestParsePriority:
 # ---------------------------------------------------------------------------
 # _is_strict_int helper
 # ---------------------------------------------------------------------------
-
-
 class TestIsStrictInt:
     def test_true_for_int(self):
         from octorules_google.validate import _is_strict_int
@@ -2615,8 +2608,6 @@ class TestIsStrictInt:
 # ---------------------------------------------------------------------------
 # GA421 range validation
 # ---------------------------------------------------------------------------
-
-
 class TestGA421Range:
     def _rl_rule(self, action="throttle", **rlo_overrides):
         """Build a rate-limit rule with overrides to rate_limit_options."""
@@ -2697,8 +2688,6 @@ class TestGA421Range:
 # ---------------------------------------------------------------------------
 # GA413 regex length check
 # ---------------------------------------------------------------------------
-
-
 class TestGA413Length:
     def test_ga413_long_pattern(self):
         long_pattern = "a" * 600
@@ -2732,8 +2721,6 @@ class TestGA413Length:
 # ---------------------------------------------------------------------------
 # GA315 suggestion field
 # ---------------------------------------------------------------------------
-
-
 class TestGA315Suggestion:
     def test_ga315_lowercase_has_suggestion(self):
         match = {"expr": {"expression": "origin.region_code == 'us'"}}
@@ -2759,8 +2746,6 @@ class TestGA315Suggestion:
 # ---------------------------------------------------------------------------
 # CEL edge case tests
 # ---------------------------------------------------------------------------
-
-
 class TestCELEdgeCases:
     """Edge case tests for CEL expression validation."""
 
@@ -2813,8 +2798,6 @@ class TestCELEdgeCases:
 # ---------------------------------------------------------------------------
 # GA409  URL validation (improved host check)
 # ---------------------------------------------------------------------------
-
-
 class TestGA409URLValidation:
     """Tests for GA409 EXTERNAL_302 URL validation."""
 
@@ -2880,8 +2863,6 @@ class TestGA409URLValidation:
 # ---------------------------------------------------------------------------
 # GA103  Dead rules: parenthesized and IP-wildcard match-all detection
 # ---------------------------------------------------------------------------
-
-
 class TestDeadRulesExtended:
     """GA103 should detect parenthesized 'true' and IP-wildcard match-all."""
 
@@ -2964,8 +2945,6 @@ class TestDeadRulesExtended:
 # ---------------------------------------------------------------------------
 # GA408/GA421  No duplicate diagnostics for count range
 # ---------------------------------------------------------------------------
-
-
 class TestGA408GA421NoDuplicate:
     """Verify count-range issues produce exactly one diagnostic, not both GA408 and GA421."""
 

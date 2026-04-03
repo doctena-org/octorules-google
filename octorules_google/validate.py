@@ -1,7 +1,5 @@
 """Offline validation for Google Cloud Armor rules."""
 
-from __future__ import annotations
-
 import difflib
 import ipaddress
 import re
@@ -284,7 +282,6 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
         _check_match_deep(rule, results, phase, ref_str)
         _check_description(rule, results, phase, ref_str)
         _check_rate_limit_deep(rule, results, phase, ref_str, seen_enforce_on_keys)
-        _check_action_params(rule, results, phase, ref_str)
         _check_preview(rule, results, phase, ref_str)
         _check_always_true_false(rule, results, phase, ref_str)
 
@@ -298,8 +295,6 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
 
 
 # --- Per-rule checks --------------------------------------------------------
-
-
 def _check_priority(
     ref: str,
     results: list[LintResult],
@@ -688,19 +683,37 @@ def _check_cidrs(
         if not isinstance(cidr, str):
             continue
         try:
-            net = ipaddress.ip_network(cidr, strict=False)
+            net = ipaddress.ip_network(cidr, strict=True)
         except ValueError:
+            # Host bits set — try non-strict to see if it's a normalizable CIDR
+            try:
+                net = ipaddress.ip_network(cidr, strict=False)
+            except ValueError:
+                results.append(
+                    _result(
+                        rule_id="GA301",
+                        severity=Severity.WARNING,
+                        message=f"Invalid CIDR: {cidr!r}",
+                        phase=phase,
+                        ref=ref,
+                        field="match.config.src_ip_ranges",
+                    )
+                )
+                continue
+            # Parseable but host bits were set — warn about normalization
             results.append(
                 _result(
-                    rule_id="GA301",
+                    rule_id="GA307",
                     severity=Severity.WARNING,
-                    message=f"Invalid CIDR: {cidr!r}",
+                    message=(
+                        f"CIDR {cidr!r} has host bits set and will be normalized to {str(net)!r}"
+                    ),
                     phase=phase,
                     ref=ref,
                     field="match.config.src_ip_ranges",
+                    suggestion=f"Use {str(net)!r} instead",
                 )
             )
-            continue
         networks.append((cidr, net))
 
     for cidr, net in networks:
@@ -838,8 +851,6 @@ def _check_description(
 
 
 # --- Deep per-rule checks (new GA310-GA431) ---------------------------------
-
-
 def _check_match_deep(
     rule: dict,
     results: list[LintResult],
@@ -1316,107 +1327,112 @@ def _check_cel_case_sensitivity(
         )
 
 
-def _check_rate_limit_deep(
-    rule: dict,
+def _check_rate_limit_threshold(
+    rlo: dict,
+    action: str,
     results: list[LintResult],
     phase: str,
     ref: str,
-    seen_enforce_on_keys: dict[str, str],
 ) -> None:
-    """GA420-GA428 — deep rate-limit parameter validation."""
-    action = rule.get("action", "")
-    rlo = rule.get("rate_limit_options")
-    if not isinstance(rlo, dict):
+    """GA420/GA421 — rate_limit_threshold subfield validation."""
+    rlt = rlo.get("rate_limit_threshold")
+    if rlt is None:
         return
 
-    # --- GA420/GA421: rate_limit_threshold subfield validation ---
-    rlt = rlo.get("rate_limit_threshold")
-    if rlt is not None:
-        if not isinstance(rlt, dict):
+    if not isinstance(rlt, dict):
+        results.append(
+            _result(
+                rule_id="GA420",
+                severity=Severity.ERROR,
+                message="rate_limit_threshold must be a dict with 'count' and 'interval_sec'",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.rate_limit_threshold",
+            )
+        )
+        return
+
+    if "count" not in rlt:
+        results.append(
+            _result(
+                rule_id="GA420",
+                severity=Severity.ERROR,
+                message="rate_limit_threshold missing required field 'count'",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.rate_limit_threshold.count",
+            )
+        )
+    if "interval_sec" not in rlt:
+        results.append(
+            _result(
+                rule_id="GA420",
+                severity=Severity.ERROR,
+                message="rate_limit_threshold missing required field 'interval_sec'",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.rate_limit_threshold.interval_sec",
+            )
+        )
+
+    # GA421: type validation
+    count = rlt.get("count")
+    if count is not None:
+        if not _is_strict_int(count):
             results.append(
                 _result(
-                    rule_id="GA420",
+                    rule_id="GA421",
                     severity=Severity.ERROR,
-                    message="rate_limit_threshold must be a dict with 'count' and 'interval_sec'",
+                    message=(f"rate_limit_threshold.count must be int, got {type(count).__name__}"),
                     phase=phase,
                     ref=ref,
-                    field="rate_limit_options.rate_limit_threshold",
+                    field="rate_limit_options.rate_limit_threshold.count",
                 )
             )
         else:
-            if "count" not in rlt:
-                results.append(
-                    _result(
-                        rule_id="GA420",
-                        severity=Severity.ERROR,
-                        message="rate_limit_threshold missing required field 'count'",
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.rate_limit_threshold.count",
-                    )
-                )
-            if "interval_sec" not in rlt:
-                results.append(
-                    _result(
-                        rule_id="GA420",
-                        severity=Severity.ERROR,
-                        message="rate_limit_threshold missing required field 'interval_sec'",
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.rate_limit_threshold.interval_sec",
-                    )
-                )
-
-            # GA421: type validation
-            count = rlt.get("count")
-            if count is not None:
-                if not _is_strict_int(count):
-                    results.append(
-                        _result(
-                            rule_id="GA421",
-                            severity=Severity.ERROR,
-                            message=(
-                                f"rate_limit_threshold.count must be int,"
-                                f" got {type(count).__name__}"
-                            ),
-                            phase=phase,
-                            ref=ref,
-                            field="rate_limit_options.rate_limit_threshold.count",
-                        )
-                    )
-                else:
-                    max_count = 10_000 if action == "rate_based_ban" else 1_000_000
-                    if count < 1 or count > max_count:
-                        results.append(
-                            _result(
-                                rule_id="GA421",
-                                severity=Severity.ERROR,
-                                message=(
-                                    f"rate_limit_threshold.count must be 1\u2013{max_count:,}"
-                                    f" for {action}, got {count!r}"
-                                ),
-                                phase=phase,
-                                ref=ref,
-                                field="rate_limit_options.rate_limit_threshold.count",
-                            )
-                        )
-            interval = rlt.get("interval_sec")
-            if interval is not None and (not _is_strict_int(interval)):
+            max_count = 10_000 if action == "rate_based_ban" else 1_000_000
+            if count < 1 or count > max_count:
                 results.append(
                     _result(
                         rule_id="GA421",
                         severity=Severity.ERROR,
                         message=(
-                            f"rate_limit_threshold.interval_sec must be int,"
-                            f" got {type(interval).__name__}"
+                            f"rate_limit_threshold.count must be 1\u2013{max_count:,}"
+                            f" for {action}, got {count!r}"
                         ),
                         phase=phase,
                         ref=ref,
-                        field="rate_limit_options.rate_limit_threshold.interval_sec",
+                        field="rate_limit_options.rate_limit_threshold.count",
                     )
                 )
+    interval = rlt.get("interval_sec")
+    if interval is not None and (not _is_strict_int(interval)):
+        results.append(
+            _result(
+                rule_id="GA421",
+                severity=Severity.ERROR,
+                message=(
+                    f"rate_limit_threshold.interval_sec must be int, got {type(interval).__name__}"
+                ),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.rate_limit_threshold.interval_sec",
+            )
+        )
 
-    # --- GA423/GA424: enforce_on_key validation ---
+
+def _check_enforce_on_key(
+    rlo: dict,
+    action: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> str | None:
+    """GA422/GA423/GA424 — enforce_on_key validation.
+
+    Returns the enforce_on_key value (or None) so callers can pass it
+    to downstream checks.
+    """
     eok = rlo.get("enforce_on_key")
     if eok is not None:
         if eok not in _VALID_ENFORCE_ON_KEYS:
@@ -1445,7 +1461,7 @@ def _check_rate_limit_deep(
                     )
                 )
 
-    # --- GA422: enforce_on_key for rate_based_ban with redirect ---
+    # GA422: enforce_on_key for rate_based_ban with redirect
     if action == "rate_based_ban":
         ea = rlo.get("exceed_action")
         if ea == "redirect" and eok is None:
@@ -1460,232 +1476,422 @@ def _check_rate_limit_deep(
                 )
             )
 
-    # --- GA425/GA426: ban_duration_sec for rate_based_ban ---
-    if action == "rate_based_ban":
-        bds = rlo.get("ban_duration_sec")
-        if bds is None:
-            results.append(
-                _result(
-                    rule_id="GA425",
-                    severity=Severity.ERROR,
-                    message="rate_based_ban requires 'ban_duration_sec' in rate_limit_options",
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.ban_duration_sec",
-                )
-            )
-        else:
-            bad = not _is_strict_int(bds) or bds <= 0
-            if bad:
-                results.append(
-                    _result(
-                        rule_id="GA426",
-                        severity=Severity.ERROR,
-                        message=f"ban_duration_sec must be a positive integer, got {bds!r}",
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.ban_duration_sec",
-                    )
-                )
-            elif bds < 60:
-                results.append(
-                    _result(
-                        rule_id="GA430",
-                        severity=Severity.WARNING,
-                        message=(
-                            f"ban_duration_sec {bds} is very short"
-                            " (< 60 seconds may be ineffective)"
-                        ),
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.ban_duration_sec",
-                        suggestion="Consider a duration of 60 seconds or more",
-                    )
-                )
-            elif bds > _MAX_BAN_DURATION:
-                results.append(
-                    _result(
-                        rule_id="GA427",
-                        severity=Severity.ERROR,
-                        message=(
-                            f"ban_duration_sec {bds} exceeds maximum ({_MAX_BAN_DURATION} seconds)"
-                        ),
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.ban_duration_sec",
-                        suggestion=f"Must be between 1 and {_MAX_BAN_DURATION}",
-                    )
-                )
-
-    # --- GA428: enforce_on_key_name content validation ---
-    eokn = rlo.get("enforce_on_key_name")
-    if eokn is not None and isinstance(eokn, str) and eok in ("HTTP_HEADER", "HTTP_COOKIE"):
-        if not eokn:
-            results.append(
-                _result(
-                    rule_id="GA428",
-                    severity=Severity.WARNING,
-                    message="enforce_on_key_name must not be empty",
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.enforce_on_key_name",
-                )
-            )
-        elif len(eokn) > _MAX_ENFORCE_ON_KEY_NAME:
-            results.append(
-                _result(
-                    rule_id="GA428",
-                    severity=Severity.WARNING,
-                    message=(
-                        f"enforce_on_key_name exceeds {_MAX_ENFORCE_ON_KEY_NAME}"
-                        f" characters ({len(eokn)})"
-                    ),
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.enforce_on_key_name",
-                )
-            )
-        elif any(c <= "\x1f" or c == "\x7f" for c in eokn):
-            results.append(
-                _result(
-                    rule_id="GA428",
-                    severity=Severity.WARNING,
-                    message="enforce_on_key_name contains control characters",
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.enforce_on_key_name",
-                )
-            )
-        elif " " in eokn:
-            results.append(
-                _result(
-                    rule_id="GA428",
-                    severity=Severity.WARNING,
-                    message="enforce_on_key_name contains spaces",
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.enforce_on_key_name",
-                )
-            )
-        elif eok == "HTTP_HEADER" and not _HEADER_NAME_RE.match(eokn):
-            results.append(
-                _result(
-                    rule_id="GA428",
-                    severity=Severity.WARNING,
-                    message=(
-                        f"enforce_on_key_name {eokn!r} contains invalid header name"
-                        " characters (RFC 7230)"
-                    ),
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.enforce_on_key_name",
-                    suggestion="Header names may only contain tchar (RFC 7230)",
-                )
-            )
-
-    # --- GA414/GA415: enforce_on_key_configs validation ---
-    eokc = rlo.get("enforce_on_key_configs")
-    if eokc is not None:
-        # GA414: mutually exclusive with enforce_on_key
-        if eok is not None:
-            results.append(
-                _result(
-                    rule_id="GA414",
-                    severity=Severity.ERROR,
-                    message=("enforce_on_key_configs is mutually exclusive with enforce_on_key"),
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.enforce_on_key_configs",
-                )
-            )
-
-        if not isinstance(eokc, list):
-            results.append(
-                _result(
-                    rule_id="GA414",
-                    severity=Severity.ERROR,
-                    message="enforce_on_key_configs must be a list",
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.enforce_on_key_configs",
-                )
-            )
-        else:
-            # GA414: max 3 entries
-            if len(eokc) > _MAX_ENFORCE_ON_KEY_CONFIGS:
-                results.append(
-                    _result(
-                        rule_id="GA414",
-                        severity=Severity.ERROR,
-                        message=(
-                            f"enforce_on_key_configs allows at most"
-                            f" {_MAX_ENFORCE_ON_KEY_CONFIGS} entries (got {len(eokc)})"
-                        ),
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.enforce_on_key_configs",
-                    )
-                )
-            # GA414: each entry must be a dict with enforce_on_key_type
-            for i, entry in enumerate(eokc):
-                if not isinstance(entry, dict):
-                    results.append(
-                        _result(
-                            rule_id="GA414",
-                            severity=Severity.ERROR,
-                            message=(f"enforce_on_key_configs[{i}] must be a dict"),
-                            phase=phase,
-                            ref=ref,
-                            field="rate_limit_options.enforce_on_key_configs",
-                        )
-                    )
-                elif "enforce_on_key_type" not in entry:
-                    results.append(
-                        _result(
-                            rule_id="GA414",
-                            severity=Severity.ERROR,
-                            message=(f"enforce_on_key_configs[{i}] missing 'enforce_on_key_type'"),
-                            phase=phase,
-                            ref=ref,
-                            field="rate_limit_options.enforce_on_key_configs",
-                        )
-                    )
-
-            # GA415: duplicate enforce_on_key_type values
-            seen_types: list[str] = []
-            for entry in eokc:
-                if isinstance(entry, dict):
-                    kt = entry.get("enforce_on_key_type")
-                    if kt is not None:
-                        seen_types.append(kt)
-            if len(seen_types) != len(set(seen_types)):
-                results.append(
-                    _result(
-                        rule_id="GA415",
-                        severity=Severity.WARNING,
-                        message="Duplicate enforce_on_key_type in enforce_on_key_configs",
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.enforce_on_key_configs",
-                    )
-                )
-
-    # Track enforce_on_key for cross-rule GA105 check
-    if action in ("throttle", "rate_based_ban") and eok is not None:
-        seen_enforce_on_keys[ref] = eok
+    return eok
 
 
-def _check_action_params(
-    rule: dict,
+def _check_ban_duration_sec(
+    rlo: dict,
+    action: str,
     results: list[LintResult],
     phase: str,
     ref: str,
 ) -> None:
-    """GA429/GA431/GA432 — action parameter validation."""
+    """GA425/GA426/GA427/GA430 — ban_duration_sec validation for rate_based_ban."""
+    if action != "rate_based_ban":
+        return
+
+    bds = rlo.get("ban_duration_sec")
+    if bds is None:
+        results.append(
+            _result(
+                rule_id="GA425",
+                severity=Severity.ERROR,
+                message="rate_based_ban requires 'ban_duration_sec' in rate_limit_options",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.ban_duration_sec",
+            )
+        )
+        return
+
+    bad = not _is_strict_int(bds) or bds <= 0
+    if bad:
+        results.append(
+            _result(
+                rule_id="GA426",
+                severity=Severity.ERROR,
+                message=f"ban_duration_sec must be a positive integer, got {bds!r}",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.ban_duration_sec",
+            )
+        )
+    elif bds < 60:
+        results.append(
+            _result(
+                rule_id="GA430",
+                severity=Severity.WARNING,
+                message=(f"ban_duration_sec {bds} is very short (< 60 seconds may be ineffective)"),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.ban_duration_sec",
+                suggestion="Consider a duration of 60 seconds or more",
+            )
+        )
+    elif bds > _MAX_BAN_DURATION:
+        results.append(
+            _result(
+                rule_id="GA427",
+                severity=Severity.ERROR,
+                message=(f"ban_duration_sec {bds} exceeds maximum ({_MAX_BAN_DURATION} seconds)"),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.ban_duration_sec",
+                suggestion=f"Must be between 1 and {_MAX_BAN_DURATION}",
+            )
+        )
+
+
+def _check_enforce_on_key_name(
+    rlo: dict,
+    eok: str | None,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA428 — enforce_on_key_name content validation."""
+    eokn = rlo.get("enforce_on_key_name")
+    if eokn is None or not isinstance(eokn, str) or eok not in ("HTTP_HEADER", "HTTP_COOKIE"):
+        return
+
+    if not eokn:
+        results.append(
+            _result(
+                rule_id="GA428",
+                severity=Severity.WARNING,
+                message="enforce_on_key_name must not be empty",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_name",
+            )
+        )
+    elif len(eokn) > _MAX_ENFORCE_ON_KEY_NAME:
+        results.append(
+            _result(
+                rule_id="GA428",
+                severity=Severity.WARNING,
+                message=(
+                    f"enforce_on_key_name exceeds {_MAX_ENFORCE_ON_KEY_NAME}"
+                    f" characters ({len(eokn)})"
+                ),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_name",
+            )
+        )
+    elif any(c <= "\x1f" or c == "\x7f" for c in eokn):
+        results.append(
+            _result(
+                rule_id="GA428",
+                severity=Severity.WARNING,
+                message="enforce_on_key_name contains control characters",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_name",
+            )
+        )
+    elif " " in eokn:
+        results.append(
+            _result(
+                rule_id="GA428",
+                severity=Severity.WARNING,
+                message="enforce_on_key_name contains spaces",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_name",
+            )
+        )
+    elif eok == "HTTP_HEADER" and not _HEADER_NAME_RE.match(eokn):
+        results.append(
+            _result(
+                rule_id="GA428",
+                severity=Severity.WARNING,
+                message=(
+                    f"enforce_on_key_name {eokn!r} contains invalid header name"
+                    " characters (RFC 7230)"
+                ),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_name",
+                suggestion="Header names may only contain tchar (RFC 7230)",
+            )
+        )
+
+
+def _check_enforce_on_key_configs(
+    rlo: dict,
+    eok: str | None,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA414/GA415 — enforce_on_key_configs validation."""
+    eokc = rlo.get("enforce_on_key_configs")
+    if eokc is None:
+        return
+
+    # GA414: mutually exclusive with enforce_on_key
+    if eok is not None:
+        results.append(
+            _result(
+                rule_id="GA414",
+                severity=Severity.ERROR,
+                message=("enforce_on_key_configs is mutually exclusive with enforce_on_key"),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_configs",
+            )
+        )
+
+    if not isinstance(eokc, list):
+        results.append(
+            _result(
+                rule_id="GA414",
+                severity=Severity.ERROR,
+                message="enforce_on_key_configs must be a list",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_configs",
+            )
+        )
+        return
+
+    # GA414: max 3 entries
+    if len(eokc) > _MAX_ENFORCE_ON_KEY_CONFIGS:
+        results.append(
+            _result(
+                rule_id="GA414",
+                severity=Severity.ERROR,
+                message=(
+                    f"enforce_on_key_configs allows at most"
+                    f" {_MAX_ENFORCE_ON_KEY_CONFIGS} entries (got {len(eokc)})"
+                ),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_configs",
+            )
+        )
+    # GA414: each entry must be a dict with enforce_on_key_type
+    for i, entry in enumerate(eokc):
+        if not isinstance(entry, dict):
+            results.append(
+                _result(
+                    rule_id="GA414",
+                    severity=Severity.ERROR,
+                    message=(f"enforce_on_key_configs[{i}] must be a dict"),
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_configs",
+                )
+            )
+        elif "enforce_on_key_type" not in entry:
+            results.append(
+                _result(
+                    rule_id="GA414",
+                    severity=Severity.ERROR,
+                    message=(f"enforce_on_key_configs[{i}] missing 'enforce_on_key_type'"),
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.enforce_on_key_configs",
+                )
+            )
+
+    # GA415: duplicate enforce_on_key_type values
+    seen_types: list[str] = []
+    for entry in eokc:
+        if isinstance(entry, dict):
+            kt = entry.get("enforce_on_key_type")
+            if kt is not None:
+                seen_types.append(kt)
+    if len(seen_types) != len(set(seen_types)):
+        results.append(
+            _result(
+                rule_id="GA415",
+                severity=Severity.WARNING,
+                message="Duplicate enforce_on_key_type in enforce_on_key_configs",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.enforce_on_key_configs",
+            )
+        )
+
+
+def _check_exceed_redirect_options(
+    rlo: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA411/GA412/GA419 — exceed_redirect_options validation."""
+    ero = rlo.get("exceed_redirect_options")
+    if not isinstance(ero, dict):
+        return
+
+    ero_type = ero.get("type", "")
+    if ero_type and ero_type not in _VALID_REDIRECT_TYPES:
+        results.append(
+            _result(
+                rule_id="GA411",
+                severity=Severity.ERROR,
+                message=(
+                    f"exceed_redirect_options.type must be one of: {sorted(_VALID_REDIRECT_TYPES)}"
+                ),
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.exceed_redirect_options.type",
+            )
+        )
+
+    ero_target = ero.get("target")
+    if ero_target is not None and isinstance(ero_target, str):
+        if not ero_target.strip():
+            results.append(
+                _result(
+                    rule_id="GA419",
+                    severity=Severity.ERROR,
+                    message="redirect target must not be empty",
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.exceed_redirect_options.target",
+                )
+            )
+        elif ero_type == "EXTERNAL_302":
+            if not ero_target.startswith(("http://", "https://")):
+                results.append(
+                    _result(
+                        rule_id="GA412",
+                        severity=Severity.ERROR,
+                        message=(
+                            "exceed_redirect_options.target must start with"
+                            " http:// or https:// for EXTERNAL_302"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.exceed_redirect_options.target",
+                    )
+                )
+            else:
+                parsed = urllib.parse.urlparse(ero_target)
+                if not parsed.netloc:
+                    results.append(
+                        _result(
+                            rule_id="GA412",
+                            severity=Severity.ERROR,
+                            message=(
+                                "exceed_redirect_options.target must include a host"
+                                " for EXTERNAL_302"
+                            ),
+                            phase=phase,
+                            ref=ref,
+                            field="rate_limit_options.exceed_redirect_options.target",
+                        )
+                    )
+
+
+def _check_ban_threshold(
+    rlo: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA410 — ban_threshold structure validation."""
+    bt = rlo.get("ban_threshold")
+    if bt is None:
+        return
+
+    if not isinstance(bt, dict):
+        results.append(
+            _result(
+                rule_id="GA410",
+                severity=Severity.ERROR,
+                message="ban_threshold must be a dict with 'count' and 'interval_sec'",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.ban_threshold",
+            )
+        )
+        return
+
+    bt_count = bt.get("count")
+    if bt_count is not None:
+        bad_type = not _is_strict_int(bt_count)
+        if bad_type or bt_count < 1:
+            results.append(
+                _result(
+                    rule_id="GA410",
+                    severity=Severity.ERROR,
+                    message="ban_threshold.count must be a positive integer",
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.ban_threshold.count",
+                )
+            )
+    else:
+        results.append(
+            _result(
+                rule_id="GA410",
+                severity=Severity.ERROR,
+                message="ban_threshold missing required field 'count'",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.ban_threshold.count",
+            )
+        )
+
+    bt_interval = bt.get("interval_sec")
+    if bt_interval is not None:
+        if bt_interval not in _VALID_INTERVALS:
+            results.append(
+                _result(
+                    rule_id="GA410",
+                    severity=Severity.ERROR,
+                    message=(f"ban_threshold.interval_sec invalid (got {bt_interval!r})"),
+                    phase=phase,
+                    ref=ref,
+                    field="rate_limit_options.ban_threshold.interval_sec",
+                    suggestion=f"Valid values: {sorted(_VALID_INTERVALS)}",
+                )
+            )
+    else:
+        results.append(
+            _result(
+                rule_id="GA410",
+                severity=Severity.ERROR,
+                message="ban_threshold missing required field 'interval_sec'",
+                phase=phase,
+                ref=ref,
+                field="rate_limit_options.ban_threshold.interval_sec",
+            )
+        )
+
+
+def _check_rate_limit_deep(
+    rule: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+    seen_enforce_on_keys: dict[str, str],
+) -> None:
+    """GA410-GA432 — deep rate-limit and action parameter validation.
+
+    Delegates to focused helpers for each concern.
+    """
     action = rule.get("action", "")
     rlo = rule.get("rate_limit_options")
     if not isinstance(rlo, dict):
         return
+
+    _check_rate_limit_threshold(rlo, action, results, phase, ref)
+    eok = _check_enforce_on_key(rlo, action, results, phase, ref)
+    _check_ban_duration_sec(rlo, action, results, phase, ref)
+    _check_enforce_on_key_name(rlo, eok, results, phase, ref)
+    _check_enforce_on_key_configs(rlo, eok, results, phase, ref)
+    _check_exceed_redirect_options(rlo, results, phase, ref)
+    _check_ban_threshold(rlo, results, phase, ref)
+
+    # Track enforce_on_key for cross-rule GA105 check
+    if action in ("throttle", "rate_based_ban") and eok is not None:
+        seen_enforce_on_keys[ref] = eok
 
     # GA429: ban_duration_sec only valid for rate_based_ban
     if action == "throttle" and "ban_duration_sec" in rlo:
@@ -1715,7 +1921,6 @@ def _check_action_params(
         )
 
     # GA432: conflicting rate-limit option combinations
-    # exceed_redirect_options without a redirect exceed_action is meaningless
     if ea is not None and ea != "redirect" and "exceed_redirect_options" in rlo:
         results.append(
             _result(
@@ -1731,138 +1936,7 @@ def _check_action_params(
             )
         )
 
-    # GA411/GA412/GA419: exceed_redirect_options validation
-    ero = rlo.get("exceed_redirect_options")
-    if isinstance(ero, dict):
-        ero_type = ero.get("type", "")
-        if ero_type and ero_type not in _VALID_REDIRECT_TYPES:
-            results.append(
-                _result(
-                    rule_id="GA411",
-                    severity=Severity.ERROR,
-                    message=(
-                        f"exceed_redirect_options.type must be one of:"
-                        f" {sorted(_VALID_REDIRECT_TYPES)}"
-                    ),
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.exceed_redirect_options.type",
-                )
-            )
-
-        ero_target = ero.get("target")
-        if ero_target is not None and isinstance(ero_target, str):
-            if not ero_target.strip():
-                results.append(
-                    _result(
-                        rule_id="GA419",
-                        severity=Severity.ERROR,
-                        message="redirect target must not be empty",
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.exceed_redirect_options.target",
-                    )
-                )
-            elif ero_type == "EXTERNAL_302":
-                if not ero_target.startswith(("http://", "https://")):
-                    results.append(
-                        _result(
-                            rule_id="GA412",
-                            severity=Severity.ERROR,
-                            message=(
-                                "exceed_redirect_options.target must start with"
-                                " http:// or https:// for EXTERNAL_302"
-                            ),
-                            phase=phase,
-                            ref=ref,
-                            field="rate_limit_options.exceed_redirect_options.target",
-                        )
-                    )
-                else:
-                    parsed = urllib.parse.urlparse(ero_target)
-                    if not parsed.netloc:
-                        results.append(
-                            _result(
-                                rule_id="GA412",
-                                severity=Severity.ERROR,
-                                message=(
-                                    "exceed_redirect_options.target must include a host"
-                                    " for EXTERNAL_302"
-                                ),
-                                phase=phase,
-                                ref=ref,
-                                field="rate_limit_options.exceed_redirect_options.target",
-                            )
-                        )
-
-    # GA410: ban_threshold structure validation
-    bt = rlo.get("ban_threshold")
-    if bt is not None:
-        if not isinstance(bt, dict):
-            results.append(
-                _result(
-                    rule_id="GA410",
-                    severity=Severity.ERROR,
-                    message="ban_threshold must be a dict with 'count' and 'interval_sec'",
-                    phase=phase,
-                    ref=ref,
-                    field="rate_limit_options.ban_threshold",
-                )
-            )
-        else:
-            bt_count = bt.get("count")
-            if bt_count is not None:
-                bad_type = not _is_strict_int(bt_count)
-                if bad_type or bt_count < 1:
-                    results.append(
-                        _result(
-                            rule_id="GA410",
-                            severity=Severity.ERROR,
-                            message="ban_threshold.count must be a positive integer",
-                            phase=phase,
-                            ref=ref,
-                            field="rate_limit_options.ban_threshold.count",
-                        )
-                    )
-            else:
-                results.append(
-                    _result(
-                        rule_id="GA410",
-                        severity=Severity.ERROR,
-                        message="ban_threshold missing required field 'count'",
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.ban_threshold.count",
-                    )
-                )
-
-            bt_interval = bt.get("interval_sec")
-            if bt_interval is not None:
-                if bt_interval not in _VALID_INTERVALS:
-                    results.append(
-                        _result(
-                            rule_id="GA410",
-                            severity=Severity.ERROR,
-                            message=(f"ban_threshold.interval_sec invalid (got {bt_interval!r})"),
-                            phase=phase,
-                            ref=ref,
-                            field="rate_limit_options.ban_threshold.interval_sec",
-                            suggestion=f"Valid values: {sorted(_VALID_INTERVALS)}",
-                        )
-                    )
-            else:
-                results.append(
-                    _result(
-                        rule_id="GA410",
-                        severity=Severity.ERROR,
-                        message="ban_threshold missing required field 'interval_sec'",
-                        phase=phase,
-                        ref=ref,
-                        field="rate_limit_options.ban_threshold.interval_sec",
-                    )
-                )
-
-    # ban_threshold_sec without rate_limit_threshold makes no sense
+    # ban_threshold without rate_limit_threshold makes no sense
     if "ban_threshold" in rlo and "rate_limit_threshold" not in rlo:
         results.append(
             _result(
@@ -1877,8 +1951,6 @@ def _check_action_params(
 
 
 # --- GA600/GA601/GA602: Preview, always-true, always-false ------------------
-
-
 def _check_preview(
     rule: dict,
     results: list[LintResult],
@@ -1964,8 +2036,6 @@ def _check_always_true_false(
 
 
 # --- Cross-rule checks ------------------------------------------------------
-
-
 def _check_inconsistent_enforce_on_key(
     seen: dict[str, str],
     results: list[LintResult],

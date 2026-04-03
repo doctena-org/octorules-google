@@ -1,7 +1,5 @@
 """Tests for the Google Cloud Armor provider."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -401,7 +399,8 @@ class TestGenericErrors:
 class TestPartialFailure:
     """Partial failure during put_phase_rules: early changes persist."""
 
-    def test_put_phase_rules_partial_failure(self, mock_armor_client, security_policy):
+    @patch("octorules.retry.time.sleep")
+    def test_put_phase_rules_partial_failure(self, _mock_sleep, mock_armor_client, security_policy):
         """First rule patches OK, second add fails → ProviderError, first change persists."""
         mock_armor_client.get.return_value = security_policy
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
@@ -902,7 +901,7 @@ class TestConcurrentWorkers:
 
 
 class TestRetryTransient:
-    """Tests for _retry_transient() exponential backoff and error propagation."""
+    """Tests for _retry_transient() delegating to retry_with_backoff."""
 
     def test_succeeds_first_try(self):
         """Function that succeeds immediately returns its result."""
@@ -923,7 +922,7 @@ class TestRetryTransient:
                 raise ServiceUnavailable("transient")
             return "ok"
 
-        with patch("octorules_google.provider.time.sleep"):
+        with patch("octorules.retry.time.sleep"):
             result = _retry_transient(flaky, label="test", retries=2)
         assert result == "ok"
         assert calls[0] == 2
@@ -933,7 +932,7 @@ class TestRetryTransient:
         from octorules_google.provider import _retry_transient
 
         err = ServiceUnavailable("persistent")
-        with patch("octorules_google.provider.time.sleep"):
+        with patch("octorules.retry.time.sleep"):
             with pytest.raises(ServiceUnavailable):
                 _retry_transient(lambda: (_ for _ in ()).throw(err), label="test", retries=2)
 
@@ -952,27 +951,28 @@ class TestRetryTransient:
         assert calls[0] == 1  # No retries
 
     def test_backoff_timing(self):
-        """Retries use exponential backoff delays."""
+        """Retries use exponential backoff delays (via retry_with_backoff)."""
         from octorules_google.provider import _retry_transient
 
         err = ServiceUnavailable("fail")
         sleep_mock = MagicMock()
-        with patch("octorules_google.provider.time.sleep", sleep_mock):
+        with patch("octorules.retry.time.sleep", sleep_mock):
             with pytest.raises(ServiceUnavailable):
                 _retry_transient(lambda: (_ for _ in ()).throw(err), label="test", retries=2)
         # Should have slept twice (before retry 1 and retry 2)
         assert sleep_mock.call_count == 2
 
-    def test_backoff_uses_correct_delay_values(self):
-        """Retries use the exact backoff delays from _RETRY_BACKOFF."""
+    def test_backoff_uses_correct_base_delays(self):
+        """Retries use backoff delays from _RETRY_BACKOFF (plus jitter)."""
         from octorules_google.provider import _retry_transient
 
         err = ServiceUnavailable("fail")
         sleep_mock = MagicMock()
-        with patch("octorules_google.provider.time.sleep", sleep_mock):
-            with pytest.raises(ServiceUnavailable):
-                _retry_transient(lambda: (_ for _ in ()).throw(err), label="test", retries=2)
-        # _RETRY_BACKOFF = (1.0, 2.0, 4.0) — first retry uses index 0, second uses index 1
+        with patch("octorules.retry.time.sleep", sleep_mock):
+            with patch("octorules.retry.random.uniform", return_value=0.0):
+                with pytest.raises(ServiceUnavailable):
+                    _retry_transient(lambda: (_ for _ in ()).throw(err), label="test", retries=2)
+        # _RETRY_BACKOFF = (1.0, 2.0, 4.0) — with jitter=0, exact values
         sleep_mock.assert_any_call(1.0)
         sleep_mock.assert_any_call(2.0)
 
@@ -1107,8 +1107,6 @@ class TestPhaseIdsDerivedFromPhases:
 # ---------------------------------------------------------------------------
 # _denormalize_rule edge cases
 # ---------------------------------------------------------------------------
-
-
 class TestDenormalizeEdgeCases:
     def test_non_numeric_ref_raises(self):
         """Non-numeric ref in _denormalize_rule raises ValueError."""
@@ -1129,8 +1127,6 @@ class TestDenormalizeEdgeCases:
 # ---------------------------------------------------------------------------
 # Default rule filtering
 # ---------------------------------------------------------------------------
-
-
 class TestDefaultRuleFiltering:
     def test_default_rule_filtered(self, mock_armor_client):
         """The GCP default rule (priority 2147483647) is excluded from results."""

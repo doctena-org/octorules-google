@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.1] - 2026-04-03
+
+### Changed
+- Transient retry uses shared `retry_with_backoff()` from core with jitter.
+- Rule normalization uses shared `to_plain_dict()`,
+  `normalize_fields()`/`denormalize_fields()` from core.
+- `_check_rate_limit_deep()` split into 7 focused helpers for
+  maintainability.
+- CIDR validation uses `strict=True` first, then warns on auto-correctable
+  host bits.
+- `put_phase_rules` logs exactly which operations succeeded (patched/added/
+  removed) on partial failure before re-raising, so users know the policy state.
+
+### Added
+- GA307: CIDR host bits normalization warning — warns when CIDR has host bits
+  set (e.g., `10.0.0.1/24` → `10.0.0.0/24`).
+
+### Removed
+- `from __future__ import annotations` from all source files.
+
 ## [0.7.0] - 2026-04-02
 
 ### Added

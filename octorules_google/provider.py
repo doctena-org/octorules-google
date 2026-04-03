@@ -6,11 +6,8 @@ Maps octorules concepts to Cloud Armor security policies:
   - Custom rulesets / Lists → Not supported
 """
 
-from __future__ import annotations
-
 import logging
 import os
-import time
 
 from google.api_core.exceptions import Forbidden, GoogleAPIError, NotFound, Unauthorized
 from google.auth.exceptions import DefaultCredentialsError
@@ -18,7 +15,13 @@ from google.cloud import compute_v1
 from octorules.config import ConfigError
 from octorules.phases import Phase
 from octorules.provider.base import PhaseRulesResult, Scope
-from octorules.provider.utils import make_error_wrapper
+from octorules.provider.utils import (
+    denormalize_fields,
+    make_error_wrapper,
+    normalize_fields,
+    to_plain_dict,
+)
+from octorules.retry import retry_with_backoff
 
 log = logging.getLogger(__name__)
 
@@ -61,8 +64,6 @@ _GCLOUD_PHASE_IDS = frozenset(p.provider_id for p in _GCLOUD_PHASES)
 
 # The default rule (priority 2147483647) is managed by GCP, not octorules.
 _DEFAULT_RULE_PRIORITY = 2147483647
-
-
 _wrap_provider_errors = make_error_wrapper(
     auth_errors=(Unauthorized, Forbidden, DefaultCredentialsError),
     connection_errors=(ConnectionError, OSError),
@@ -77,35 +78,28 @@ _RETRY_BACKOFF = (1.0, 2.0, 4.0)
 def _retry_transient(fn, *, label: str, retries: int = 2):
     """Call *fn* with retry on transient GoogleAPIError.
 
-    Auth/NotFound errors propagate immediately.  Returns the result of *fn*.
+    Auth/NotFound errors propagate immediately.  Delegates to
+    :func:`octorules.retry.retry_with_backoff` for the actual retry loop.
     """
-    last_exc: Exception | None = None
-    for attempt in range(retries + 1):
+
+    def _guarded():
         try:
             return fn()
         except _NO_RETRY_ERRORS:
             raise
-        except (GoogleAPIError, ConnectionError, OSError) as e:
-            last_exc = e
-            if attempt < retries:
-                delay = _RETRY_BACKOFF[min(attempt, len(_RETRY_BACKOFF) - 1)]
-                log.warning(
-                    "Retrying %s (attempt %d/%d): %s",
-                    label,
-                    attempt + 1,
-                    retries + 1,
-                    e,
-                )
-                time.sleep(delay)
-    assert last_exc is not None  # loop ran at least once
-    raise last_exc
+
+    return retry_with_backoff(
+        _guarded,
+        retryable=(GoogleAPIError, ConnectionError, OSError),
+        max_attempts=retries + 1,
+        backoff=_RETRY_BACKOFF,
+        label=label,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Rule classification
 # ---------------------------------------------------------------------------
-
-
 def _is_rate_rule(rule: dict) -> bool:
     """True if the rule uses rate limiting (rateLimitOptions with enforce action)."""
     return rule.get("action") in ("rate_based_ban", "throttle")
@@ -153,6 +147,8 @@ def _classify_phase(rule: dict) -> str:
 # Rule normalization
 # ---------------------------------------------------------------------------
 
+_GCLOUD_FIELD_MAP = {"priority": "ref"}
+
 
 def _normalize_rule(rule) -> dict:
     """Convert a Cloud Armor SecurityPolicyRule to an octorules dict.
@@ -161,27 +157,25 @@ def _normalize_rule(rule) -> dict:
     identified by their integer priority.  Accepts both proto-plus objects
     and plain dicts.
     """
-    if hasattr(rule, "to_dict") and not isinstance(rule, dict):
-        # Proto-plus object — convert via to_dict()
-        d = type(rule).to_dict(rule)
-    else:
-        d = dict(rule)
-    d["ref"] = str(d.pop("priority", ""))
+    d = to_plain_dict(rule)
+    d = normalize_fields(d, _GCLOUD_FIELD_MAP)
+    # Cloud Armor priorities are ints; octorules refs are strings.
+    d["ref"] = str(d.get("ref", ""))
     return d
 
 
 def _denormalize_rule(rule: dict) -> dict:
     """Convert an octorules dict back to Cloud Armor format (ref -> priority)."""
     d = dict(rule)
-    d["priority"] = int(d.pop("ref", "0"))
+    # octorules refs are strings; Cloud Armor priorities are ints.
+    d["ref"] = int(d.get("ref", "0"))
+    d = denormalize_fields(d, _GCLOUD_FIELD_MAP)
     return d
 
 
 # ---------------------------------------------------------------------------
 # Provider
 # ---------------------------------------------------------------------------
-
-
 class CloudArmorProvider:
     """Google Cloud Armor provider for octorules.
 
@@ -248,10 +242,7 @@ class CloudArmorProvider:
             security_policy=policy_name,
             timeout=self._timeout,
         )
-        if isinstance(response, dict):
-            return response
-        # Proto-plus objects have to_dict on the class (metaclass method).
-        return type(response).to_dict(response)
+        return to_plain_dict(response)
 
     def _get_rules(self, scope: Scope) -> list[dict]:
         """Fetch all non-default rules from a security policy."""
@@ -324,54 +315,69 @@ class CloudArmorProvider:
             gcloud_rule = _denormalize_rule(rule)
             new_by_pri[gcloud_rule["priority"]] = gcloud_rule
 
-        patched = []
-        added = []
-        removed = []
+        patched: list[int] = []
+        added: list[int] = []
+        removed: list[int] = []
 
-        # 1. Patch in-place (priority exists in both old and new)
-        for pri, gcloud_rule in new_by_pri.items():
-            if pri in old_by_pri:
-                _retry_transient(
-                    lambda _p=pri, _r=gcloud_rule: self._client.patch_rule(
-                        project=self._project,
-                        security_policy=policy_name,
-                        priority=_p,
-                        security_policy_rule_resource=_r,
-                        timeout=self._timeout,
-                    ),
-                    label=f"patch rule priority={pri} in {policy_name}",
-                )
-                patched.append(pri)
+        try:
+            # 1. Patch in-place (priority exists in both old and new)
+            for pri, gcloud_rule in new_by_pri.items():
+                if pri in old_by_pri:
+                    _retry_transient(
+                        lambda _p=pri, _r=gcloud_rule: self._client.patch_rule(
+                            project=self._project,
+                            security_policy=policy_name,
+                            priority=_p,
+                            security_policy_rule_resource=_r,
+                            timeout=self._timeout,
+                        ),
+                        label=f"patch rule priority={pri} in {policy_name}",
+                    )
+                    patched.append(pri)
 
-        # 2. Add new priorities (not in old set)
-        for pri, gcloud_rule in new_by_pri.items():
-            if pri not in old_by_pri:
-                _retry_transient(
-                    lambda _p=pri, _r=gcloud_rule: self._client.add_rule(
-                        project=self._project,
-                        security_policy=policy_name,
-                        security_policy_rule_resource=_r,
-                        timeout=self._timeout,
-                    ),
-                    label=f"add rule priority={pri} to {policy_name}",
-                )
-                added.append(pri)
+            # 2. Add new priorities (not in old set)
+            for pri, gcloud_rule in new_by_pri.items():
+                if pri not in old_by_pri:
+                    _retry_transient(
+                        lambda _p=pri, _r=gcloud_rule: self._client.add_rule(
+                            project=self._project,
+                            security_policy=policy_name,
+                            security_policy_rule_resource=_r,
+                            timeout=self._timeout,
+                        ),
+                        label=f"add rule priority={pri} to {policy_name}",
+                    )
+                    added.append(pri)
 
-        # 3. Remove old priorities (not in new set)
-        for pri in old_by_pri:
-            if pri not in new_by_pri:
-                _retry_transient(
-                    lambda _p=pri: self._client.remove_rule(
-                        request={
-                            "project": self._project,
-                            "security_policy": policy_name,
-                            "priority": _p,
-                        },
-                        timeout=self._timeout,
-                    ),
-                    label=f"remove rule priority={pri} from {policy_name}",
-                )
-                removed.append(pri)
+            # 3. Remove old priorities (not in new set)
+            for pri in old_by_pri:
+                if pri not in new_by_pri:
+                    _retry_transient(
+                        lambda _p=pri: self._client.remove_rule(
+                            request={
+                                "project": self._project,
+                                "security_policy": policy_name,
+                                "priority": _p,
+                            },
+                            timeout=self._timeout,
+                        ),
+                        label=f"remove rule priority={pri} from {policy_name}",
+                    )
+                    removed.append(pri)
+        except Exception:
+            # Log what succeeded before the failure so the user knows
+            # the policy state.  The error itself propagates.
+            log.error(
+                "put_phase_rules %s/%s PARTIAL FAILURE: "
+                "patched=%s added=%s removed=%s (of %d total rules)",
+                policy_name,
+                provider_id,
+                patched,
+                added,
+                removed,
+                len(rules),
+            )
+            raise
 
         if patched or added or removed:
             log.debug(

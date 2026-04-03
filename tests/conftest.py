@@ -1,7 +1,5 @@
 """Shared fixtures for octorules-google tests."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 import pytest

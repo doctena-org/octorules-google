@@ -1,7 +1,5 @@
 """Tests for the Google Cloud Armor audit IP extractor."""
 
-from __future__ import annotations
-
 from octorules_google.audit import _extract_ips
 
 

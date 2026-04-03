@@ -1,7 +1,5 @@
 """Google Cloud Armor audit extension — extracts IP ranges from rules."""
 
-from __future__ import annotations
-
 from octorules.audit import RuleIPInfo
 from octorules.extensions import register_audit_extension
 from octorules.phases import PHASE_BY_NAME

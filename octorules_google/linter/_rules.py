@@ -1,7 +1,5 @@
 """Google Cloud Armor lint rule definitions — all GCloud-specific RuleMeta instances."""
 
-from __future__ import annotations
-
 from octorules.linter.engine import Severity
 from octorules.linter.rules.registry import RuleMeta
 

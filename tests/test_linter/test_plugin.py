@@ -1,7 +1,5 @@
 """Tests for the Google Cloud Armor lint plugin."""
 
-from __future__ import annotations
-
 from octorules.linter.engine import LintContext, Severity
 from octorules.linter.plugin import get_registered_plugins
 from octorules.linter.rules.registry import RULE_REGISTRY

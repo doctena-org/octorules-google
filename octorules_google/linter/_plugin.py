@@ -1,7 +1,5 @@
 """Google Cloud Armor lint plugin — orchestrates all GCloud-specific linter checks."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from octorules.linter.engine import LintContext

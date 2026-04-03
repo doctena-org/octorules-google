@@ -1,6 +1,6 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **69 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **70 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
 
 ### Suppressing rules
 
@@ -68,6 +68,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA304](#ga304--cel-expression-exceeds-2048-character-limit) | CEL expression exceeds 2048 character limit | WARNING |
 | [GA305](#ga305--overlapping-or-duplicate-cidrs) | Overlapping or duplicate CIDRs | WARNING |
 | [GA306](#ga306--0-cidr-matches-all-traffic) | /0 CIDR matches all traffic | WARNING |
+| [GA307](#ga307--cidr-host-bits-normalization) | CIDR host bits normalization | WARNING |
 | [GA310](#ga310--unknown-field-reference-in-cel-expression) | Unknown field reference in CEL expression | WARNING |
 | [GA311](#ga311--unknown-function-in-cel-expression) | Unknown function in CEL expression | WARNING |
 | [GA312](#ga312--invalid-versioned_expr-value) | Invalid versioned_expr value | ERROR |
@@ -610,6 +611,34 @@ gcloud_armor_custom_rules:
     match:
       expr:
         expression: "true"
+```
+
+---
+
+### GA307 -- CIDR host bits normalization
+
+**Severity:** WARNING
+
+A CIDR in `src_ip_ranges` has host bits set that will be silently normalized by Cloud Armor. For example, `10.0.0.1/24` is treated as `10.0.0.0/24`. This may not match the intended range.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      versioned_expr: SRC_IPS_V1
+      config:
+        src_ip_ranges:
+          - "10.0.0.1/24"
+```
+
+**Fix:** Use the normalized CIDR notation with host bits cleared:
+
+```yaml
+        src_ip_ranges:
+          - "10.0.0.0/24"
 ```
 
 ---

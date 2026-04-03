@@ -1,7 +1,5 @@
 """Google Cloud Armor linter — registers all GCloud-specific lint rules and plugins."""
 
-from __future__ import annotations
-
 _registered = False
 
 
