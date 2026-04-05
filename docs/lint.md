@@ -1,6 +1,6 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **70 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **71 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
 
 ### Suppressing rules
 
@@ -52,6 +52,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA001](#ga001--rule-missing-ref) | Rule missing 'ref' | ERROR |
 | [GA002](#ga002--rule-missing-action) | Rule missing 'action' | ERROR |
 | [GA003](#ga003--rule-missing-match) | Rule missing 'match' | ERROR |
+| [GA020](#ga020--unknown-top-level-rule-field) | Unknown top-level rule field | ERROR |
 | [GA100](#ga100--invalid-priority-must-be-non-negative-integer) | Invalid priority (must be non-negative integer) | ERROR |
 | [GA101](#ga101--priority-out-of-range-0-2147483646) | Priority out of range (0-2147483646) | ERROR |
 | [GA102](#ga102--duplicate-priority) | Duplicate priority | ERROR |
@@ -90,7 +91,6 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA405](#ga405--conform_action-must-be-allow) | conform_action must be 'allow' | ERROR |
 | [GA406](#ga406--invalid-exceed_action) | Invalid exceed_action | ERROR |
 | [GA407](#ga407--invalid-interval_sec-value) | Invalid interval_sec value | ERROR |
-| [GA408](#ga408--rate_limit_threshold-interval_sec-validation) | rate_limit_threshold interval_sec validation (count moved to GA421) | ERROR |
 | [GA410](#ga410--invalid-ban_threshold-structure) | Invalid ban_threshold structure | ERROR |
 | [GA411](#ga411--invalid-exceed_redirect_optionstype) | Invalid exceed_redirect_options.type | ERROR |
 | [GA412](#ga412--exceed_redirect_optionstarget-must-be-valid-url-for-external_302) | exceed_redirect_options.target must be a valid URL for EXTERNAL_302 | ERROR |
@@ -114,6 +114,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA431](#ga431--redirect-exceed_action-requires-exceed_redirect_options) | redirect exceed_action requires exceed_redirect_options | ERROR |
 | [GA432](#ga432--conflicting-rate-limit-options) | Conflicting rate-limit options | ERROR |
 | [GA500](#ga500--description-exceeds-1024-character-limit) | Description exceeds 1024 character limit | WARNING |
+| [GA501](#ga501--regex-rule-count-exceeds-standard-tier-limit) | Regex rule count exceeds standard tier limit (10) | WARNING |
 | [GA502](#ga502--rule-count-exceeds-tier-limit) | Rule count exceeds tier limit | WARNING |
 | [GA503](#ga503--privatereserved-ip-range-in-src_ip_ranges) | Private/reserved IP range in src_ip_ranges | WARNING |
 | [GA600](#ga600--rule-is-in-preview-mode) | Rule is in preview mode (preview: true) | INFO |
@@ -122,7 +123,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 
 ---
 
-## Structure (GA001--GA003)
+## Structure (GA001--GA003, GA020)
 
 ### GA001 -- Rule missing 'ref'
 
@@ -197,6 +198,28 @@ gcloud_armor_custom_rules:
       expr:
         expression: "origin.region_code == 'CN'"
 ```
+
+---
+
+### GA020 -- Unknown top-level rule field
+
+**Severity:** ERROR
+
+Each Cloud Armor rule has a fixed set of valid top-level fields (`ref`, `action`, `match`, `description`, `preview`, `header_action`, `rate_limit_options`, `redirect_options`, `kind`). Any other field is flagged as unknown -- usually a typo or a field placed at the wrong nesting level.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "origin.region_code == 'CN'"
+    typo_field: "value"
+```
+
+**Fix:** Remove or rename the unknown field. If you intended a different nesting level, move it to the correct location.
 
 ---
 
@@ -404,15 +427,18 @@ gcloud_armor_preconfigured_rules:
 
 The `action` value is not a recognized Cloud Armor action. Valid actions are: `allow`, `deny(403)`, `deny(404)`, `deny(502)`, `throttle`, `rate_based_ban`, and `redirect`.
 
+Bare `deny` (without a status code) produces a targeted suggestion: "deny requires a status code, e.g. deny(403)".
+
 **Triggers on:**
 
 ```yaml
 gcloud_armor_custom_rules:
   - ref: "1000"
-    action: block
-    match:
-      expr:
-        expression: "origin.region_code == 'CN'"
+    action: block      # unknown action
+    # ...
+  - ref: "1001"
+    action: deny       # missing status code
+    # ...
 ```
 
 **Fix:** Use a valid action:
@@ -773,7 +799,7 @@ gcloud_armor_custom_rules:
 Validates country codes used in `origin.region_code` comparisons. Country codes must be exactly 2 uppercase ASCII letters (ISO 3166-1 alpha-2 format).
 
 Detected patterns:
-- `origin.region_code == "xx"` — equality comparison
+- `origin.region_code == "xx"` or `origin.region_code != "xx"` — equality/inequality comparison
 - `origin.region_code in ["xx", "yy"]` — list membership
 
 **Triggers on:**
@@ -795,7 +821,7 @@ gcloud_armor_custom_rules:
 
 **Severity:** WARNING
 
-Validates HTTP method names used in `request.method` comparisons. Catches typos like `"GETT"` and suggests the closest valid method using fuzzy matching.
+Validates HTTP method names used in `request.method` comparisons (both `==` and `!=`). Catches typos like `"GETT"` and suggests the closest valid method using fuzzy matching.
 
 Valid methods: CONNECT, DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, TRACE.
 
@@ -881,7 +907,7 @@ gcloud_armor_custom_rules:
 
 **Severity:** INFO
 
-Warns when string equality comparisons on `request.path`, `request.query`, or `request.host` use mixed-case string literals. These comparisons are case-sensitive in CEL, which may cause unexpected behavior.
+Warns when string equality comparisons on `request.path`, `request.query`, `request.host`, or `request.url` use mixed-case string literals. These comparisons are case-sensitive in CEL, which may cause unexpected behavior.
 
 Only triggers when the literal contains mixed case (not all-lowercase or all-uppercase). Does not trigger for `request.method` or `origin.region_code` which are conventionally uppercase.
 
@@ -1152,31 +1178,6 @@ The `interval_sec` in `rate_limit_threshold` must be one of the fixed values sup
 
 ```yaml
         interval_sec: 60
-```
-
----
-
-### GA408 -- rate_limit_threshold interval_sec validation
-
-**Severity:** ERROR
-
-Validates the `interval_sec` field in `rate_limit_threshold`. Count-range validation (minimum and maximum values) has been consolidated into GA421 to eliminate duplicate diagnostics.
-
-**Triggers on:**
-
-```yaml
-    rate_limit_options:
-      conform_action: allow
-      exceed_action: deny-429
-      rate_limit_threshold:
-        count: 0
-        interval_sec: 60
-```
-
-**Fix:** Use a count within the valid range:
-
-```yaml
-        count: 100
 ```
 
 ---
@@ -1733,6 +1734,18 @@ gcloud_armor_custom_rules:
 ```
 
 **Fix:** Use public IP ranges that match actual client traffic, or remove the rule if it was added in error. If you are testing locally, suppress with `# octorules:disable=GA503`. Private ranges like `10.x`, `172.16.x`, and `192.168.x` will never match real internet traffic in Cloud Armor.
+
+---
+
+### GA501 -- Regex rule count exceeds standard tier limit
+
+**Severity:** WARNING
+
+Google Cloud Armor standard tier limits each security policy to **10 rules** that use `matches()` (regex) in their CEL expression. This check counts regex rules across all phases in the policy and warns when the limit is exceeded.
+
+**Triggers on:** A policy with more than 10 rules using `matches()`.
+
+**Fix:** Reduce the number of regex rules, combine patterns, or upgrade to Cloud Armor Plus/Enterprise which has higher limits.
 
 ---
 

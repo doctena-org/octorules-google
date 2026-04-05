@@ -272,6 +272,11 @@ class TestLists:
         with pytest.raises(ConfigError, match="not supported"):
             provider.delete_list(_zs(), "ip-1")
 
+    def test_update_description_raises(self, mock_armor_client):
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        with pytest.raises(ConfigError, match="not supported"):
+            provider.update_list_description(_zs(), "ip-1", "new desc")
+
     def test_get_items_returns_empty(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
         assert provider.get_list_items(_zs(), "ip-1") == []
@@ -433,6 +438,38 @@ class TestPartialFailure:
         mock_armor_client.patch_rule.assert_called_once()
         assert mock_armor_client.patch_rule.call_args[1]["priority"] == 100
 
+    @patch("octorules.retry.time.sleep")
+    def test_put_phase_rules_logs_partial_failure(
+        self, _mock_sleep, mock_armor_client, security_policy, caplog
+    ):
+        """Partial failure emits ERROR log with patched/added/removed details."""
+        import logging
+
+        mock_armor_client.get.return_value = security_policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+
+        new_rules = [
+            {
+                "ref": "100",
+                "action": "deny(502)",
+                "match": {"expr": {"expression": "true"}},
+            },
+            {
+                "ref": "500",
+                "action": "deny(403)",
+                "match": {"expr": {"expression": "true"}},
+            },
+        ]
+        mock_armor_client.patch_rule.return_value = None
+        mock_armor_client.add_rule.side_effect = GoogleAPIError("quota exceeded")
+
+        with caplog.at_level(logging.ERROR), pytest.raises(ProviderError):
+            provider.put_phase_rules(_zs(), "gcloud_armor_custom", new_rules)
+
+        assert "PARTIAL FAILURE" in caplog.text
+        assert "gcloud_armor_custom" in caplog.text
+
 
 class TestRuleClassification:
     def test_deny_is_custom(self):
@@ -493,13 +530,13 @@ class TestRuleClassification:
         assert result == "gcloud_armor_custom"
         assert "Unrecognized action" not in caplog.text
 
-    def test_plain_deny_no_warning(self, caplog):
-        """Plain 'deny' (no parens) is a known action, should not warn."""
+    def test_plain_deny_warns(self, caplog):
+        """Plain 'deny' (no status code) is unrecognized — should warn."""
         from octorules_google.provider import _classify_phase
 
         result = _classify_phase({"action": "deny", "priority": 10, "match": {}})
         assert result == "gcloud_armor_custom"
-        assert "Unrecognized action" not in caplog.text
+        assert "Unrecognized action" in caplog.text
 
     def test_allow_no_warning(self, caplog):
         from octorules_google.provider import _classify_phase
@@ -1108,11 +1145,22 @@ class TestPhaseIdsDerivedFromPhases:
 # _denormalize_rule edge cases
 # ---------------------------------------------------------------------------
 class TestDenormalizeEdgeCases:
-    def test_non_numeric_ref_raises(self):
-        """Non-numeric ref in _denormalize_rule raises ValueError."""
+    def test_non_numeric_ref_raises_config_error(self):
+        """Non-numeric ref in _denormalize_rule raises ConfigError with context."""
+        from octorules.config import ConfigError
+
         from octorules_google.provider import _denormalize_rule
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigError, match="must be numeric"):
+            _denormalize_rule({"ref": "abc", "action": "allow"})
+
+    def test_non_numeric_ref_includes_value_in_message(self):
+        """Error message includes the invalid ref value."""
+        from octorules.config import ConfigError
+
+        from octorules_google.provider import _denormalize_rule
+
+        with pytest.raises(ConfigError, match="'abc'"):
             _denormalize_rule({"ref": "abc", "action": "allow"})
 
     def test_missing_ref_defaults_to_zero(self):
@@ -1171,3 +1219,48 @@ class TestDefaultRuleFiltering:
         mock_armor_client.get.return_value = policy
         rules = provider.get_phase_rules(_zs(zone_id="policy-1"), "gcloud_armor_custom")
         assert rules == []
+
+
+class TestNormalizationRoundTrip:
+    """Verify normalize -> denormalize preserves rule structure."""
+
+    def test_custom_rule_round_trip(self):
+        from octorules_google.provider import _denormalize_rule, _normalize_rule
+
+        api_rule = {
+            "priority": 100,
+            "action": "deny(403)",
+            "match": {"expr": {"expression": "origin.region_code == 'CN'"}},
+            "description": "Block CN",
+        }
+        normalized = _normalize_rule(api_rule)
+        assert normalized["ref"] == "100"
+        assert "priority" not in normalized
+
+        denormalized = _denormalize_rule(normalized)
+        assert denormalized["priority"] == 100
+        assert "ref" not in denormalized
+        assert denormalized["action"] == "deny(403)"
+        assert denormalized["description"] == "Block CN"
+
+    def test_rate_limit_rule_round_trip(self):
+        from octorules_google.provider import _denormalize_rule, _normalize_rule
+
+        api_rule = {
+            "priority": 200,
+            "action": "throttle",
+            "match": {"expr": {"expression": "true"}},
+            "rate_limit_options": {
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                "conform_action": "allow",
+                "exceed_action": "deny(429)",
+            },
+        }
+        normalized = _normalize_rule(api_rule)
+        assert normalized["ref"] == "200"
+
+        denormalized = _denormalize_rule(normalized)
+        assert denormalized["priority"] == 200
+        assert denormalized["action"] == "throttle"
+        rlo = denormalized.get("rate_limit_options", {})
+        assert rlo["rate_limit_threshold"]["count"] == 100

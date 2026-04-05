@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.0] - 2026-04-05
+
+### Added
+- `gcloud_armor_policy_settings` extension — manage policy-level settings
+  (`adaptive_protection_config`, `advanced_options_config`,
+  `ddos_protection_config`, `default_rule_action`) as code.
+- `evaluateThreatIntelligence`, `evaluateThreatIntelligenceWithExcl`,
+  `evaluateJsonPath` added to known CEL functions — eliminates false GA311
+  warnings.
+
+### Fixed
+- GA307 (`CIDR has host bits set`) was emitted by the validator but never
+  registered as a `RuleMeta` — added to `_rules.py`.
+- `_MATCHES_RE` regex failed on regex patterns containing the opposite quote
+  type — now uses separate alternations for single-quoted and double-quoted
+  patterns.
+- `_SENSITIVITY_RE` only matched `sensitivity` as the first key in the options
+  dict — now matches at any position via `[^}]*?` lookahead.
+- Bare `deny` action (without status code) produced a generic GA200 error — now
+  gives a targeted suggestion: "deny requires a status code, e.g. deny(403)".
+  `_classify_phase` also warns on bare `deny` since it is not a valid Cloud
+  Armor action.
+- GA315 (country code) and GA316 (HTTP method) validation only checked `==`
+  comparisons — now also validates `!=` operands.
+- `request.url` missing from GA319 case-sensitivity check — added to
+  `_CASE_SENSITIVE_FIELDS` and regex.
+- `request.host` was missing from `_KNOWN_FIELDS`, causing spurious GA310
+  "unknown field" warnings on a valid Cloud Armor field.
+
+### Changed
+- `celpy.Environment()` created once at module level instead of per-expression
+  — avoids redundant initialization.
+- Added test coverage for `update_list_description` raising `ConfigError`.
+
 ## [0.7.1] - 2026-04-03
 
 ### Changed

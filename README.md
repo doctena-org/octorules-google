@@ -69,6 +69,7 @@ Safety thresholds are configured under `safety:` (framework-owned, not forwarded
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Phase rules (4 phases) | Supported | Security policy rules |
+| Policy settings | Supported | Adaptive protection, DDoS config, default rule action |
 | Custom rulesets | Not supported | — |
 | Lists | Not supported | Use inline IP ranges in match config |
 | Page Shield | Not supported | — |
@@ -173,7 +174,7 @@ Lint rules are registered automatically when octorules-google is installed. CEL 
 
 - **Non-atomic updates:** Cloud Armor does not support atomic bulk rule replacement. `put_phase_rules` patches existing rules in place, adds new rules, then removes stale rules — so the policy never has *fewer* rules than intended. Each API call is retried for transient errors with exponential backoff. If an operation fails after retries, partial progress is logged and the next sync will reconcile.
 - **Policy creation/deletion:** octorules-google manages rules within existing security policies. Creating or deleting policies (and attaching them to backend services) should be done via `gcloud` or Terraform.
-- **Policy-level settings are not managed.** The following are configured per-policy (not per-rule) and should be managed via `gcloud` or Terraform: adaptive DDoS protection (`adaptiveProtectionConfig`), advanced options (`advancedOptionsConfig`), and JSON body parsing (`jsonParsing`).
+- **Policy settings require the extension.** Policy-level settings (`adaptive_protection_config`, `advanced_options_config`, `ddos_protection_config`, `default_rule_action`) are managed via the `gcloud_armor_policy_settings` extension. Without the extension enabled, these settings should be managed via `gcloud` or Terraform.
 
 > **Note:** Per-rule rate limiting fields (`enforceOnKey`, `enforceOnKeyConfigs`, `banDurationSec`), header actions (`headerAction`), and CEL functions like `evaluateJsonPath()` are already supported — they pass through as-is in the rule dict.
 

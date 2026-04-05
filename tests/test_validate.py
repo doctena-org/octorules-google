@@ -46,6 +46,68 @@ class TestValidRules:
 
 
 # ---------------------------------------------------------------------------
+# GA020  Unknown top-level rule fields
+# ---------------------------------------------------------------------------
+class TestUnknownFields:
+    def test_ga020_unknown_field(self):
+        r = _rule(bogus_field="x")
+        assert "GA020" in _ids(validate_rules([r]))
+
+    def test_ga020_multiple_unknown_fields(self):
+        r = _rule(foo="a", bar="b")
+        results = validate_rules([r])
+        ga020_results = [r for r in results if r.rule_id == "GA020"]
+        fields = {r.field for r in ga020_results}
+        assert "foo" in fields
+        assert "bar" in fields
+
+    def test_ga020_severity_is_error(self):
+        from octorules.linter.engine import Severity
+
+        r = _rule(unknown="x")
+        results = validate_rules([r])
+        ga020_results = [r for r in results if r.rule_id == "GA020"]
+        assert ga020_results[0].severity == Severity.ERROR
+
+    def test_ga020_valid_fields_not_flagged(self):
+        r = _rule(
+            description="test",
+            preview=True,
+            header_action={"requestHeadersToAdds": []},
+        )
+        assert "GA020" not in _ids(validate_rules([r]))
+
+    def test_ga020_kind_not_flagged(self):
+        """'kind' is an API field preserved during normalization."""
+        r = _rule(kind="compute#securityPolicyRule")
+        assert "GA020" not in _ids(validate_rules([r]))
+
+    def test_ga020_rate_limit_options_not_flagged(self):
+        r = _rule(
+            action="throttle",
+            rate_limit_options={
+                "conform_action": "allow",
+                "exceed_action": "deny-429",
+                "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+            },
+        )
+        assert "GA020" not in _ids(validate_rules([r]))
+
+    def test_ga020_redirect_options_not_flagged(self):
+        r = _rule(
+            action="redirect",
+            redirect_options={"type": "GOOGLE_RECAPTCHA"},
+        )
+        assert "GA020" not in _ids(validate_rules([r]))
+
+    def test_ga020_message_includes_field_name(self):
+        r = _rule(typo_field="val")
+        results = validate_rules([r])
+        ga020 = [r for r in results if r.rule_id == "GA020"]
+        assert "typo_field" in ga020[0].message
+
+
+# ---------------------------------------------------------------------------
 # GA001-GA003  Structural checks
 # ---------------------------------------------------------------------------
 class TestStructural:
@@ -212,6 +274,21 @@ class TestActions:
 
     def test_ga200_deny_without_parens(self):
         assert "GA200" in _ids(validate_rules([_rule(action="deny")]))
+
+    def test_ga200_bare_deny_targeted_suggestion(self):
+        """Bare 'deny' produces GA200 with the targeted status-code suggestion."""
+        results = validate_rules([_rule(action="deny")])
+        ga200 = [r for r in results if r.rule_id == "GA200"]
+        assert len(ga200) == 1
+        assert ga200[0].suggestion == "deny requires a status code, e.g. deny(403)"
+
+    def test_ga200_invalid_action_generic_suggestion(self):
+        """Non-deny invalid action gets the generic suggestion, not the targeted one."""
+        results = validate_rules([_rule(action="block")])
+        ga200 = [r for r in results if r.rule_id == "GA200"]
+        assert len(ga200) == 1
+        assert "deny requires a status code" not in ga200[0].suggestion
+        assert "Valid actions:" in ga200[0].suggestion
 
     def test_ga201_invalid_deny_status(self):
         assert "GA201" in _ids(validate_rules([_rule(action="deny(500)")]))
@@ -444,7 +521,7 @@ class TestCidrChecks:
 
 
 # ---------------------------------------------------------------------------
-# GA400-GA408  Rate limit options
+# GA400-GA407  Rate limit options (GA408 removed — consolidated into GA421)
 # ---------------------------------------------------------------------------
 class TestRateLimitOptions:
     def test_ga400_throttle_missing_rate_limit(self):
@@ -722,6 +799,10 @@ class TestMatchDeep:
         match = {"expr": {"expression": "token.recaptcha_exemption.valid == true"}}
         assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
 
+    def test_ga310_known_request_host(self):
+        match = {"expr": {"expression": "request.host == 'example.com'"}}
+        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+
     def test_ga310_multiple_unknown(self):
         match = {"expr": {"expression": "bogus.one == 'x' && fake.two == 'y'"}}
         results = validate_rules([_rule(match=match)])
@@ -795,6 +876,19 @@ class TestMatchDeep:
 
     def test_ga311_known_has(self):
         match = {"expr": {"expression": "has(request.headers['X-Custom'])"}}
+        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga311_known_evaluateThreatIntelligence(self):
+        match = {"expr": {"expression": "evaluateThreatIntelligence('iplist-known-malicious-ips')"}}
+        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga311_known_evaluateThreatIntelligenceWithExcl(self):
+        expr = "evaluateThreatIntelligenceWithExcl('iplist-known-malicious-ips', ['1.2.3.0/24'])"
+        match = {"expr": {"expression": expr}}
+        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga311_known_evaluateJsonPath(self):
+        match = {"expr": {"expression": "evaluateJsonPath(request.body, '$.user')"}}
         assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
 
     def test_ga311_deduped(self):
@@ -2366,6 +2460,7 @@ class TestGA319:
         match = {"expr": {"expression": "request.host == 'Example.COM'"}}
         results = validate_rules([_rule(match=match)])
         assert "GA319" in _ids(results)
+        assert "GA310" not in _ids(results)
 
     def test_ga319_mixed_case_query(self):
         match = {"expr": {"expression": "request.query == 'fooBar'"}}
@@ -2473,6 +2568,122 @@ class TestGA502:
             rules, plan_tier="standard", phase="gcloud_armor_custom_rules"
         )
         assert results[0].phase == "gcloud_armor_custom_rules"
+
+
+# ---------------------------------------------------------------------------
+# GA501  Regex rule count per policy
+# ---------------------------------------------------------------------------
+class TestGA501:
+    def _regex_rule(self, ref, pattern=".*"):
+        return _rule(
+            ref=ref,
+            match={"expr": {"expression": f'request.path.matches("{pattern}")'}},
+        )
+
+    def _plain_rule(self, ref):
+        return _rule(ref=ref, match={"expr": {"expression": "true"}})
+
+    def test_ga501_under_limit(self):
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [self._regex_rule(str(i)) for i in range(10)]
+        assert "GA501" not in _ids(validate_regex_rule_count(rules))
+
+    def test_ga501_over_limit(self):
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [self._regex_rule(str(i)) for i in range(11)]
+        results = validate_regex_rule_count(rules)
+        assert "GA501" in _ids(results)
+        assert "11" in results[0].message
+        assert "10" in results[0].message
+
+    def test_ga501_at_limit(self):
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [self._regex_rule(str(i)) for i in range(10)]
+        assert "GA501" not in _ids(validate_regex_rule_count(rules))
+
+    def test_ga501_mixed_rules(self):
+        """Only rules with matches() count toward the limit."""
+        from octorules_google.validate import validate_regex_rule_count
+
+        regex_rules = [self._regex_rule(str(i)) for i in range(8)]
+        plain_rules = [self._plain_rule(str(i + 100)) for i in range(20)]
+        assert "GA501" not in _ids(validate_regex_rule_count(regex_rules + plain_rules))
+
+    def test_ga501_mixed_over_limit(self):
+        from octorules_google.validate import validate_regex_rule_count
+
+        regex_rules = [self._regex_rule(str(i)) for i in range(11)]
+        plain_rules = [self._plain_rule(str(i + 100)) for i in range(5)]
+        results = validate_regex_rule_count(regex_rules + plain_rules)
+        assert "GA501" in _ids(results)
+
+    def test_ga501_non_regex_not_counted(self):
+        """Rules without matches() in expression are not regex rules."""
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [self._plain_rule(str(i)) for i in range(50)]
+        assert "GA501" not in _ids(validate_regex_rule_count(rules))
+
+    def test_ga501_versioned_expr_not_counted(self):
+        """Rules using versioned_expr (SRC_IPS_V1) are not regex rules."""
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [
+            _rule(
+                ref=str(i),
+                match={
+                    "versioned_expr": "SRC_IPS_V1",
+                    "config": {"src_ip_ranges": ["1.2.3.4/32"]},
+                },
+            )
+            for i in range(15)
+        ]
+        assert "GA501" not in _ids(validate_regex_rule_count(rules))
+
+    def test_ga501_severity_is_warning(self):
+        from octorules.linter.engine import Severity
+
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [self._regex_rule(str(i)) for i in range(11)]
+        results = validate_regex_rule_count(rules)
+        assert results[0].severity == Severity.WARNING
+
+    def test_ga501_phase_passed_through(self):
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [self._regex_rule(str(i)) for i in range(11)]
+        results = validate_regex_rule_count(rules, phase="gcloud_armor_custom_rules")
+        assert results[0].phase == "gcloud_armor_custom_rules"
+
+    def test_ga501_single_quoted_matches(self):
+        """matches() with single-quoted pattern should count."""
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [
+            _rule(
+                ref=str(i),
+                match={"expr": {"expression": "request.path.matches('.*')"}},
+            )
+            for i in range(11)
+        ]
+        assert "GA501" in _ids(validate_regex_rule_count(rules))
+
+    def test_ga501_expr_as_string(self):
+        """Handle expr as a plain string (shorthand form)."""
+        from octorules_google.validate import validate_regex_rule_count
+
+        rules = [
+            _rule(
+                ref=str(i),
+                match={"expr": f'request.path.matches("{i}.*")'},
+            )
+            for i in range(11)
+        ]
+        assert "GA501" in _ids(validate_regex_rule_count(rules))
 
 
 class TestResultFactory:

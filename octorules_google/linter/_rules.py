@@ -7,6 +7,7 @@ from octorules.linter.rules.registry import RuleMeta
 GA001 = RuleMeta("GA001", "structure", "Rule missing 'ref'", Severity.ERROR)
 GA002 = RuleMeta("GA002", "structure", "Rule missing 'action'", Severity.ERROR)
 GA003 = RuleMeta("GA003", "structure", "Rule missing 'match'", Severity.ERROR)
+GA020 = RuleMeta("GA020", "structure", "Unknown top-level rule field", Severity.ERROR)
 
 # Category GA1xx — Priority & cross-rule checks
 GA100 = RuleMeta(
@@ -34,6 +35,7 @@ GA303 = RuleMeta("GA303", "match", "Unknown preconfigured WAF rule set", Severit
 GA304 = RuleMeta("GA304", "match", "CEL expression exceeds 2048 character limit", Severity.WARNING)
 GA305 = RuleMeta("GA305", "match", "Overlapping or duplicate CIDRs", Severity.WARNING)
 GA306 = RuleMeta("GA306", "match", "/0 CIDR matches all traffic", Severity.WARNING)
+GA307 = RuleMeta("GA307", "match", "CIDR has host bits set (will be normalized)", Severity.WARNING)
 
 # Category GA4xx — Rate-limit and redirect option checks
 GA400 = RuleMeta(
@@ -48,7 +50,7 @@ GA404 = RuleMeta("GA404", "redirect", "EXTERNAL_302 redirect requires 'target' U
 GA405 = RuleMeta("GA405", "rate_limit", "conform_action must be 'allow'", Severity.ERROR)
 GA406 = RuleMeta("GA406", "rate_limit", "Invalid exceed_action", Severity.ERROR)
 GA407 = RuleMeta("GA407", "rate_limit", "Invalid interval_sec value", Severity.ERROR)
-GA408 = RuleMeta("GA408", "rate_limit", "rate_limit_threshold count out of range", Severity.ERROR)
+# GA408 removed — count-range validation consolidated into GA421.
 
 # GA1xx continued — cross-rule analysis
 GA105 = RuleMeta(
@@ -233,6 +235,9 @@ GA319 = RuleMeta(
 # Category GA5xx — Description & IP range checks
 GA500 = RuleMeta(
     "GA500", "description", "Description exceeds 1024 character limit", Severity.WARNING
+)
+GA501 = RuleMeta(
+    "GA501", "cross_rule", "Regex rule count exceeds standard tier limit (10)", Severity.WARNING
 )
 GA502 = RuleMeta("GA502", "cross_rule", "Rule count exceeds tier limit", Severity.WARNING)
 GA503 = RuleMeta("GA503", "match", "Private/reserved IP range in src_ip_ranges", Severity.WARNING)

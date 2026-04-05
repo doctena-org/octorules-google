@@ -8,6 +8,9 @@ import urllib.parse
 import celpy
 from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
 
+# Reusable CEL environment — stateless, safe to share across calls.
+_CEL_ENV = celpy.Environment()
+
 
 def _parse_priority(ref: str) -> int | None:
     """Parse a rule ref as an integer priority, returning None on failure."""
@@ -44,6 +47,21 @@ def _is_strict_int(val: object) -> bool:
     return isinstance(val, int) and not isinstance(val, bool)
 
 
+# --- GA020: Valid top-level rule fields ------------------------------------
+_VALID_RULE_FIELDS = frozenset(
+    {
+        "ref",
+        "action",
+        "match",
+        "description",
+        "preview",
+        "header_action",
+        "rate_limit_options",
+        "redirect_options",
+        "kind",
+    }
+)
+
 _BASE_ACTIONS = frozenset({"allow", "throttle", "rate_based_ban", "redirect"})
 _DENY_STATUSES = frozenset({403, 404, 502})
 _DENY_RE = re.compile(r"^deny\((\d+)\)$")
@@ -77,6 +95,7 @@ _PRECONFIGURED_RE = re.compile(r"evaluatePreconfigured(?:Waf|Expr)\(\s*['\"]([^'
 _KNOWN_FIELDS = frozenset(
     {
         "request.headers",
+        "request.host",
         "request.method",
         "request.path",
         "request.scheme",
@@ -125,6 +144,9 @@ _KNOWN_FUNCTIONS = frozenset(
         "int",
         "evaluatePreconfiguredWaf",
         "evaluatePreconfiguredExpr",
+        "evaluateThreatIntelligence",
+        "evaluateThreatIntelligenceWithExcl",
+        "evaluateJsonPath",
         "has",
     }
 )
@@ -157,20 +179,23 @@ _HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 _MAX_ENFORCE_ON_KEY_NAME = 128
 _MAX_ENFORCE_ON_KEY_CONFIGS = 3
 
-# GA413: regex patterns in CEL matches() calls
-_MATCHES_RE = re.compile(r"""matches\(\s*["']([^"']+)["']\s*\)""")
+# GA413: regex patterns in CEL matches() calls — two alternations so that
+# a single-quoted pattern can contain double quotes and vice versa.
+_MATCHES_RE = re.compile(r"""matches\(\s*(?:"([^"]+)"|'([^']+)')\s*\)""")
 
-# GA416: sensitivity level in evaluatePreconfiguredWaf/Expr calls
+# GA416: sensitivity level in evaluatePreconfiguredWaf/Expr calls.
+# The sensitivity key may appear at any position within the options dict,
+# so we allow arbitrary content before the "sensitivity" key.
 _SENSITIVITY_RE = re.compile(
     r"""evaluatePreconfigured(?:Waf|Expr)\(\s*["'][^"']+["']\s*,"""
-    r"""\s*\{\s*["']sensitivity["']\s*:\s*(\d+)\s*\}\s*\)"""
+    r"""\s*\{[^}]*?["']sensitivity["']\s*:\s*(\d+)[^}]*\}\s*\)"""
 )
 
 # GA418: header names in request.headers["..."] bracket access
 _HEADER_BRACKET_RE = re.compile(r"""request\.headers\[\s*["']([^"']+)["']\s*\]""")
 
 # --- GA315: Country code validation in CEL expressions ---
-_COUNTRY_CODE_EQ_RE = re.compile(r"""origin\.region_code\s*==\s*["']([A-Za-z]+)["']""")
+_COUNTRY_CODE_EQ_RE = re.compile(r"""origin\.region_code\s*[!=]=\s*["']([A-Za-z]+)["']""")
 _COUNTRY_CODE_IN_RE = re.compile(r"""origin\.region_code\s+in\s*\[([^\]]+)\]""")
 _QUOTED_STRING_RE = re.compile(r"""["']([^"']+)["']""")
 
@@ -178,7 +203,7 @@ _QUOTED_STRING_RE = re.compile(r"""["']([^"']+)["']""")
 _VALID_HTTP_METHODS = frozenset(
     {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
 )
-_HTTP_METHOD_EQ_RE = re.compile(r"""request\.method\s*==\s*["']([^"']+)["']""")
+_HTTP_METHOD_EQ_RE = re.compile(r"""request\.method\s*[!=]=\s*["']([^"']+)["']""")
 _HTTP_METHOD_IN_RE = re.compile(r"""request\.method\s+in\s*\[([^\]]+)\]""")
 
 # --- GA317: CIDR validation in inIpRange() ---
@@ -204,8 +229,10 @@ _TYPE_MISMATCH_RE = re.compile(
 )
 
 # --- GA319: Case sensitivity reminder ---
-_CASE_SENSITIVE_FIELDS = frozenset({"request.path", "request.query", "request.host"})
-_CASE_SENSITIVE_CMP_RE = re.compile(r"""(request\.(?:path|query|host))\s*==\s*["']([^"']+)["']""")
+_CASE_SENSITIVE_FIELDS = frozenset({"request.path", "request.query", "request.host", "request.url"})
+_CASE_SENSITIVE_CMP_RE = re.compile(
+    r"""(request\.(?:path|query|host|url))\s*==\s*["']([^"']+)["']"""
+)
 
 # --- GA502: Tier-aware rule count limits ---
 _TIER_RULE_LIMITS: dict[str, int] = {
@@ -276,6 +303,7 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
             )
         ref_str = str(ref)
 
+        _check_unknown_fields(rule, results, phase, ref_str)
         _check_priority(ref_str, results, phase, seen_priorities)
         _check_action(rule, results, phase, ref_str)
         _check_match(rule, results, phase, ref_str, seen_expressions, seen_waf_rulesets)
@@ -295,6 +323,22 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
 
 
 # --- Per-rule checks --------------------------------------------------------
+def _check_unknown_fields(rule: dict, results: list[LintResult], phase: str, ref: str) -> None:
+    """GA020: flag unknown top-level rule fields."""
+    unknown = set(rule) - _VALID_RULE_FIELDS
+    for field in sorted(unknown):
+        results.append(
+            _result(
+                rule_id="GA020",
+                severity=Severity.ERROR,
+                message=f"Unknown top-level rule field: '{field}'",
+                phase=phase,
+                ref=ref,
+                field=field,
+            )
+        )
+
+
 def _check_priority(
     ref: str,
     results: list[LintResult],
@@ -375,6 +419,13 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
                 )
             )
     elif action not in _BASE_ACTIONS:
+        if action == "deny":
+            suggestion = "deny requires a status code, e.g. deny(403)"
+        else:
+            suggestion = (
+                "Valid actions: allow, deny(403), deny(404), deny(502),"
+                " rate_based_ban, redirect, throttle"
+            )
         results.append(
             _result(
                 rule_id="GA200",
@@ -383,14 +434,11 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
                 phase=phase,
                 ref=ref,
                 field="action",
-                suggestion=(
-                    "Valid actions: allow, deny(403), deny(404), deny(502),"
-                    " rate_based_ban, redirect, throttle"
-                ),
+                suggestion=suggestion,
             )
         )
 
-    # GA400-GA408: rate_limit_options
+    # GA400-GA407: rate_limit_options
     if action in ("throttle", "rate_based_ban"):
         if "rate_limit_options" not in rule:
             results.append(
@@ -430,7 +478,7 @@ def _check_rate_limit_options(
     phase: str,
     ref: str,
 ) -> None:
-    """GA403/GA405/GA406/GA407/GA408 — rate_limit_options structure."""
+    """GA403/GA405/GA406/GA407 — rate_limit_options structure."""
     if not isinstance(rlo, dict):
         return
 
@@ -792,8 +840,7 @@ def _check_cel_length(
 def _check_cel(expr: str, results: list[LintResult], phase: str, ref: str) -> None:
     """GA302: CEL syntax check."""
     try:
-        env = celpy.Environment()
-        env.compile(expr)
+        _CEL_ENV.compile(expr)
     except celpy.CELParseError as exc:
         results.append(
             _result(
@@ -1022,7 +1069,7 @@ def _check_cel_regex(
 ) -> None:
     """GA413: invalid/overlong regex pattern in CEL matches() calls."""
     for m in _MATCHES_RE.finditer(expr):
-        pattern = m.group(1)
+        pattern = m.group(1) or m.group(2)
         if len(pattern) > _MAX_REGEX_PATTERN_LEN:
             results.append(
                 _result(
@@ -2216,6 +2263,60 @@ def validate_rule_count(
                 rule_id="GA502",
                 severity=Severity.WARNING,
                 message=(f"Rule count ({count}) exceeds {tier} tier limit ({limit})"),
+                phase=phase,
+            )
+        )
+    return results
+
+
+# --- GA501: Regex rule count per policy (standard tier limit: 10) ----------
+_MAX_REGEX_RULES_STANDARD = 10
+
+
+def _rule_uses_regex(rule: dict) -> bool:
+    """Return True if the rule's CEL expression contains a matches() call."""
+    match = rule.get("match")
+    if not isinstance(match, dict):
+        return False
+    expr_block = match.get("expr")
+    if isinstance(expr_block, dict):
+        expression = expr_block.get("expression", "")
+    elif isinstance(expr_block, str):
+        expression = expr_block
+    else:
+        return False
+    return bool(_MATCHES_RE.search(expression))
+
+
+def validate_regex_rule_count(
+    all_rules: list[dict],
+    *,
+    phase: str = "",
+) -> list[LintResult]:
+    """GA501: warn when regex rule count exceeds standard tier limit (10).
+
+    Google Cloud Armor standard tier limits each policy to 10 rules
+    that use ``matches()`` in their CEL expression.  This check counts
+    regex rules across all phases in a policy.
+
+    Args:
+        all_rules: List of Cloud Armor rule dicts (aggregated across phases).
+        phase: Phase name for reporting (cosmetic; the check is cross-phase).
+
+    Returns:
+        List of lint results (empty if within limits).
+    """
+    results: list[LintResult] = []
+    regex_count = sum(1 for r in all_rules if _rule_uses_regex(r))
+    if regex_count > _MAX_REGEX_RULES_STANDARD:
+        results.append(
+            _result(
+                rule_id="GA501",
+                severity=Severity.WARNING,
+                message=(
+                    f"Regex rule count ({regex_count}) exceeds standard"
+                    f" tier limit ({_MAX_REGEX_RULES_STANDARD})"
+                ),
                 phase=phase,
             )
         )

@@ -122,7 +122,7 @@ def _is_redirect_rule(rule: dict) -> bool:
     return rule.get("action") == "redirect"
 
 
-_KNOWN_CUSTOM_ACTIONS = frozenset({"allow", "deny"})
+_KNOWN_CUSTOM_ACTIONS = frozenset({"allow"})
 
 
 def _classify_phase(rule: dict) -> str:
@@ -168,7 +168,14 @@ def _denormalize_rule(rule: dict) -> dict:
     """Convert an octorules dict back to Cloud Armor format (ref -> priority)."""
     d = dict(rule)
     # octorules refs are strings; Cloud Armor priorities are ints.
-    d["ref"] = int(d.get("ref", "0"))
+    ref_str = d.get("ref", "0")
+    try:
+        d["ref"] = int(ref_str)
+    except (ValueError, TypeError) as e:
+        raise ConfigError(
+            f"Invalid rule ref {ref_str!r}: Cloud Armor rule priorities"
+            f" must be numeric strings (e.g., '100')"
+        ) from e
     d = denormalize_fields(d, _GCLOUD_FIELD_MAP)
     return d
 
@@ -250,6 +257,69 @@ class CloudArmorProvider:
         rules = policy.get("rules", [])
         return [r for r in rules if r.get("priority") != _DEFAULT_RULE_PRIORITY]
 
+    # -- Policy settings --
+
+    @_wrap_provider_errors
+    def get_policy_settings(self, scope: Scope) -> dict:
+        """Fetch and normalize policy-level settings."""
+        from octorules_google._policy_settings import normalize_policy_settings
+
+        policy = self._get_policy(scope)
+        return normalize_policy_settings(policy)
+
+    @_wrap_provider_errors
+    def update_policy_settings(self, scope: Scope, settings: dict) -> None:
+        """Update policy settings via patch.
+
+        Handles two types of changes:
+        - Policy-level fields (adaptive_protection_config, etc.) are
+          patched on the policy resource directly.
+        - ``default_rule_action`` requires fetching the policy, updating
+          the default rule's action, and patching the policy with the
+          modified rule.
+        """
+        from octorules_google._policy_settings import denormalize_policy_settings
+
+        payload = denormalize_policy_settings(settings)
+        if not payload:
+            return
+
+        policy_name = scope.zone_id
+
+        # Build the SecurityPolicy resource to patch.
+        patch_resource: dict = {}
+
+        # Policy-level config fields
+        policy_fields = payload.get("policy_fields")
+        if policy_fields:
+            patch_resource.update(policy_fields)
+
+        # Default rule action: fetch current policy and update the
+        # default rule's action field.
+        default_action = payload.get("default_rule_action")
+        if default_action is not None:
+            policy = self._get_policy(scope)
+            rules = policy.get("rules", [])
+            updated_rules = []
+            for rule in rules:
+                if rule.get("priority") == _DEFAULT_RULE_PRIORITY:
+                    rule = dict(rule)
+                    rule["action"] = default_action
+                updated_rules.append(rule)
+            patch_resource["rules"] = updated_rules
+
+        if patch_resource:
+            _retry_transient(
+                lambda: self._client.patch(
+                    project=self._project,
+                    security_policy=policy_name,
+                    security_policy_resource=patch_resource,
+                    timeout=self._timeout,
+                ),
+                label=f"update_policy_settings {policy_name}",
+            )
+            log.debug("Updated policy settings for %s", policy_name)
+
     # -- Zone resolution --
 
     @_wrap_provider_errors
@@ -295,6 +365,13 @@ class CloudArmorProvider:
         window of inconsistency this method:
 
         1. Patches rules whose priority exists in both old and new sets.
+
+        **Design limitation (G1):** If a step fails partway through, the
+        policy is left in a mixed state (some rules patched, new rules
+        partially added, stale rules not yet removed). This is inherent to
+        per-rule CRUD without transactional support. The next successful
+        sync will reconcile the state. Partial progress is logged at ERROR
+        level so operators know exactly what succeeded before the failure.
         2. Adds rules with new priorities (policy briefly has *extra* rules).
         3. Removes old priorities that are no longer needed.
 

@@ -107,6 +107,35 @@ class TestGoogleLint:
         assert "gcloud_armor_preconfigured_rules" in phases_in_results
         assert "gcloud_armor_redirect_rules" in phases_in_results
 
+    @staticmethod
+    def _regex_rule(ref):
+        return {
+            "ref": ref,
+            "action": "allow",
+            "match": {"expr": {"expression": f'request.path.matches("/{ref}")'}},
+        }
+
+    def test_ga501_cross_phase_regex_count(self):
+        """GA501 counts regex rules across all phases."""
+        ctx = LintContext()
+        rules_data = {
+            "gcloud_armor_custom_rules": [self._regex_rule(str(i)) for i in range(6)],
+            "gcloud_armor_rate_rules": [self._regex_rule(str(i + 100)) for i in range(6)],
+        }
+        google_lint(rules_data, ctx)
+        rule_ids = [r.rule_id for r in ctx.results]
+        assert "GA501" in rule_ids
+
+    def test_ga501_not_triggered_under_limit(self):
+        ctx = LintContext()
+        rules_data = {
+            "gcloud_armor_custom_rules": [self._regex_rule(str(i)) for i in range(5)],
+            "gcloud_armor_rate_rules": [self._regex_rule(str(i + 100)) for i in range(5)],
+        }
+        google_lint(rules_data, ctx)
+        rule_ids = [r.rule_id for r in ctx.results]
+        assert "GA501" not in rule_ids
+
     def test_severity_filter_applied(self):
         ctx = LintContext(severity_filter=Severity.ERROR)
         rules_data = {
