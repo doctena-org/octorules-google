@@ -152,14 +152,14 @@ match:
 
 ## Linting
 
-71 Cloud Armor-specific lint rules (GA prefix) covering structure, expressions, actions, rate limiting, redirects, and cross-rule analysis:
+74 Cloud Armor-specific lint rules (GA prefix) covering structure, expressions, actions, rate limiting, redirects, sub-structure validation, and cross-rule analysis:
 
 | Prefix | Category | Rules |
 |--------|----------|-------|
 | GA001-GA003 | Structure | 3 |
 | GA100-GA108 | Priority / cross-rule | 7 |
 | GA200-GA201 | Action | 2 |
-| GA300-GA319 | Match / expression / CEL | 18 |
+| GA300-GA327 | Match / expression / CEL / sub-structure | 21 |
 | GA400-GA432 | Rate limit / redirect / action params | 31 |
 | GA500-GA503 | Best practice | 3 |
 | GA600-GA602 | Preview / catch-all | 3 |

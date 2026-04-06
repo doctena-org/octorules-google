@@ -59,11 +59,13 @@ _VALID_RULE_FIELDS = frozenset(
         "rate_limit_options",
         "redirect_options",
         "kind",
+        "network_match",
+        "preconfigured_waf_config",
     }
 )
 
 _BASE_ACTIONS = frozenset({"allow", "throttle", "rate_based_ban", "redirect"})
-_DENY_STATUSES = frozenset({403, 404, 502})
+_DENY_STATUSES = frozenset({403, 404, 429, 502})
 _DENY_RE = re.compile(r"^deny\((\d+)\)$")
 _VALID_REDIRECT_TYPES = frozenset({"GOOGLE_RECAPTCHA", "EXTERNAL_302"})
 _MAX_PRIORITY = 2_147_483_646
@@ -148,6 +150,10 @@ _KNOWN_FUNCTIONS = frozenset(
         "evaluateThreatIntelligenceWithExcl",
         "evaluateJsonPath",
         "has",
+        "evaluateAdaptiveProtection",
+        "evaluateAdaptiveProtectionAutoDeploy",
+        "urlDecode",
+        "htmlDecode",
     }
 )
 
@@ -166,6 +172,9 @@ _VALID_ENFORCE_ON_KEYS = frozenset(
         "HTTP_PATH",
         "SNI",
         "REGION_CODE",
+        "TLS_JA3_FINGERPRINT",
+        "TLS_JA4_FINGERPRINT",
+        "USER_IP",
     }
 )
 
@@ -310,6 +319,9 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
         _check_match_deep(rule, results, phase, ref_str)
         _check_description(rule, results, phase, ref_str)
         _check_rate_limit_deep(rule, results, phase, ref_str, seen_enforce_on_keys)
+        _check_header_action(rule, results, phase, ref_str)
+        _check_network_match(rule, results, phase, ref_str)
+        _check_preconfigured_waf_config(rule, results, phase, ref_str)
         _check_preview(rule, results, phase, ref_str)
         _check_always_true_false(rule, results, phase, ref_str)
 
@@ -415,7 +427,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
                     phase=phase,
                     ref=ref,
                     field="action",
-                    suggestion="Valid deny statuses: 403, 404, 502",
+                    suggestion="Valid deny statuses: 403, 404, 429, 502",
                 )
             )
     elif action not in _BASE_ACTIONS:
@@ -423,8 +435,8 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
             suggestion = "deny requires a status code, e.g. deny(403)"
         else:
             suggestion = (
-                "Valid actions: allow, deny(403), deny(404), deny(502),"
-                " rate_based_ban, redirect, throttle"
+                "Valid actions: allow, deny(403), deny(404), deny(429),"
+                " deny(502), rate_based_ban, redirect, throttle"
             )
         results.append(
             _result(
@@ -1742,6 +1754,23 @@ def _check_enforce_on_key_configs(
                     field="rate_limit_options.enforce_on_key_configs",
                 )
             )
+        else:
+            # GA423: validate the enforce_on_key_type value
+            kt = entry["enforce_on_key_type"]
+            if kt not in _VALID_ENFORCE_ON_KEYS:
+                results.append(
+                    _result(
+                        rule_id="GA423",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Invalid enforce_on_key_type in enforce_on_key_configs[{i}]: {kt!r}"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="rate_limit_options.enforce_on_key_configs",
+                        suggestion=f"Valid values: {sorted(_VALID_ENFORCE_ON_KEYS)}",
+                    )
+                )
 
     # GA415: duplicate enforce_on_key_type values
     seen_types: list[str] = []
@@ -1995,6 +2024,162 @@ def _check_rate_limit_deep(
                 field="rate_limit_options.ban_threshold",
             )
         )
+
+
+# --- GA325/GA326/GA327: Sub-structure validation ---------------------------
+def _check_header_action(
+    rule: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA325: validate header_action sub-structure."""
+    ha = rule.get("header_action")
+    if ha is None:
+        return
+    if not isinstance(ha, dict):
+        results.append(
+            _result(
+                rule_id="GA325",
+                severity=Severity.ERROR,
+                message="header_action must be a dict",
+                phase=phase,
+                ref=ref,
+                field="header_action",
+            )
+        )
+        return
+
+    rhta = ha.get("request_headers_to_adds")
+    if rhta is None:
+        return
+    if not isinstance(rhta, list):
+        results.append(
+            _result(
+                rule_id="GA325",
+                severity=Severity.ERROR,
+                message="header_action.request_headers_to_adds must be a list",
+                phase=phase,
+                ref=ref,
+                field="header_action.request_headers_to_adds",
+            )
+        )
+        return
+
+    for i, entry in enumerate(rhta):
+        if not isinstance(entry, dict):
+            results.append(
+                _result(
+                    rule_id="GA325",
+                    severity=Severity.ERROR,
+                    message=f"header_action.request_headers_to_adds[{i}] must be a dict",
+                    phase=phase,
+                    ref=ref,
+                    field="header_action.request_headers_to_adds",
+                )
+            )
+            continue
+        for required in ("header_name", "header_value"):
+            if required not in entry:
+                results.append(
+                    _result(
+                        rule_id="GA325",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"header_action.request_headers_to_adds[{i}] missing '{required}'"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field=f"header_action.request_headers_to_adds.{required}",
+                    )
+                )
+
+
+def _check_network_match(
+    rule: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA326: validate network_match sub-structure."""
+    nm = rule.get("network_match")
+    if nm is None:
+        return
+    if not isinstance(nm, dict):
+        results.append(
+            _result(
+                rule_id="GA326",
+                severity=Severity.ERROR,
+                message="network_match must be a dict",
+                phase=phase,
+                ref=ref,
+                field="network_match",
+            )
+        )
+
+
+def _check_preconfigured_waf_config(
+    rule: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA327: validate preconfigured_waf_config sub-structure."""
+    pwc = rule.get("preconfigured_waf_config")
+    if pwc is None:
+        return
+    if not isinstance(pwc, dict):
+        results.append(
+            _result(
+                rule_id="GA327",
+                severity=Severity.ERROR,
+                message="preconfigured_waf_config must be a dict",
+                phase=phase,
+                ref=ref,
+                field="preconfigured_waf_config",
+            )
+        )
+        return
+
+    exclusions = pwc.get("exclusions")
+    if exclusions is None:
+        return
+    if not isinstance(exclusions, list):
+        results.append(
+            _result(
+                rule_id="GA327",
+                severity=Severity.ERROR,
+                message="preconfigured_waf_config.exclusions must be a list",
+                phase=phase,
+                ref=ref,
+                field="preconfigured_waf_config.exclusions",
+            )
+        )
+        return
+
+    for i, exc in enumerate(exclusions):
+        if not isinstance(exc, dict):
+            results.append(
+                _result(
+                    rule_id="GA327",
+                    severity=Severity.ERROR,
+                    message=f"preconfigured_waf_config.exclusions[{i}] must be a dict",
+                    phase=phase,
+                    ref=ref,
+                    field="preconfigured_waf_config.exclusions",
+                )
+            )
+        elif "target_rule_set" not in exc:
+            results.append(
+                _result(
+                    rule_id="GA327",
+                    severity=Severity.ERROR,
+                    message=(f"preconfigured_waf_config.exclusions[{i}] missing 'target_rule_set'"),
+                    phase=phase,
+                    ref=ref,
+                    field="preconfigured_waf_config.exclusions",
+                )
+            )
 
 
 # --- GA600/GA601/GA602: Preview, always-true, always-false ------------------

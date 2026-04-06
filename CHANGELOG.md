@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.1] - 2026-04-06
+
+### Added
+- **GA325** (ERROR): `header_action` sub-structure validation — checks that
+  `header_action` is a dict, `request_headers_to_adds` is a list of dicts,
+  and each entry has `header_name` and `header_value`.
+- **GA326** (ERROR): `network_match` must be a dict.
+- **GA327** (ERROR): `preconfigured_waf_config` exclusions validation — checks
+  that `exclusions` is a list of dicts, each with a `target_rule_set` key.
+- `deny(429)` added to valid deny status codes and default action choices.
+- `evaluateAdaptiveProtection`, `evaluateAdaptiveProtectionAutoDeploy`,
+  `urlDecode`, `htmlDecode` added to known CEL functions.
+- `TLS_JA3_FINGERPRINT`, `TLS_JA4_FINGERPRINT`, `USER_IP` added to valid
+  `enforce_on_key` / `enforce_on_key_type` values.
+- GA423 now also validates `enforce_on_key_type` inside
+  `enforce_on_key_configs` entries.
+- `network_match` and `preconfigured_waf_config` added to valid top-level
+  rule fields (no longer trigger GA020).
+- `recaptcha_options_config` pass-through support in the
+  `gcloud_armor_policy_settings` extension.
+- `advanced_options_config.log_level` validation (`NORMAL` or `VERBOSE`).
+- `adaptive_protection_config.layer7_ddos_defense_config.rule_visibility`
+  validation (`PREMIUM` or `STANDARD`).
+- `adaptive_protection_config.layer7_ddos_defense_config.enable` must be a
+  bool.
+- `ADVANCED_PREVIEW` added to valid `ddos_protection_config` values.
+
+### Changed
+- GA200 suggestion messages now include `deny(429)` in the valid actions
+  list.
+
 ## [0.8.0] - 2026-04-05
 
 ### Added

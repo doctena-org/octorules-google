@@ -54,9 +54,11 @@ class PolicySettingsPlan:
 # ---------------------------------------------------------------------------
 # Valid enum values
 # ---------------------------------------------------------------------------
-_VALID_DEFAULT_ACTIONS = frozenset({"allow", "deny(403)", "deny(404)", "deny(502)"})
-_VALID_DDOS_PROTECTION = frozenset({"STANDARD", "ADVANCED"})
+_VALID_DEFAULT_ACTIONS = frozenset({"allow", "deny(403)", "deny(404)", "deny(429)", "deny(502)"})
+_VALID_DDOS_PROTECTION = frozenset({"STANDARD", "ADVANCED", "ADVANCED_PREVIEW"})
 _VALID_JSON_PARSING = frozenset({"DISABLED", "STANDARD", "STANDARD_WITH_GRAPHQL"})
+_VALID_LOG_LEVELS = frozenset({"NORMAL", "VERBOSE"})
+_VALID_RULE_VISIBILITY = frozenset({"PREMIUM", "STANDARD"})
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +68,9 @@ def normalize_policy_settings(policy: dict) -> dict:
     """Convert a full security policy dict to YAML-friendly settings.
 
     Extracts ``adaptive_protection_config``, ``advanced_options_config``,
-    ``ddos_protection_config`` (pass through as nested dicts), and
-    ``default_rule_action`` (extracted from the rule at priority
-    2147483647).
+    ``ddos_protection_config``, ``recaptcha_options_config`` (pass through
+    as nested dicts), and ``default_rule_action`` (extracted from the rule
+    at priority 2147483647).
     """
     result: dict = {}
 
@@ -78,6 +80,8 @@ def normalize_policy_settings(policy: dict) -> dict:
         result["advanced_options_config"] = policy["advanced_options_config"]
     if "ddos_protection_config" in policy:
         result["ddos_protection_config"] = policy["ddos_protection_config"]
+    if "recaptcha_options_config" in policy:
+        result["recaptcha_options_config"] = policy["recaptcha_options_config"]
 
     # Extract default rule action
     for rule in policy.get("rules", []):
@@ -111,7 +115,12 @@ def denormalize_policy_settings(settings: dict) -> dict:
     result: dict = {}
     policy_fields: dict = {}
 
-    for key in ("adaptive_protection_config", "advanced_options_config", "ddos_protection_config"):
+    for key in (
+        "adaptive_protection_config",
+        "advanced_options_config",
+        "ddos_protection_config",
+        "recaptcha_options_config",
+    ):
         if key in settings:
             policy_fields[key] = settings[key]
 
@@ -216,7 +225,7 @@ def _validate_policy_settings(desired, zone_name, errors, lines):
                 f" (must be one of {sorted(_VALID_DDOS_PROTECTION)})"
             )
 
-    # advanced_options_config.json_parsing
+    # advanced_options_config.json_parsing and log_level
     adv_cfg = settings.get("advanced_options_config")
     if isinstance(adv_cfg, dict):
         jp_val = adv_cfg.get("json_parsing")
@@ -226,6 +235,33 @@ def _validate_policy_settings(desired, zone_name, errors, lines):
                 f" advanced_options_config.json_parsing {jp_val!r}"
                 f" (must be one of {sorted(_VALID_JSON_PARSING)})"
             )
+        ll_val = adv_cfg.get("log_level")
+        if ll_val is not None and ll_val not in _VALID_LOG_LEVELS:
+            errors.append(
+                f"  {zone_name}/{_EXT_KEY}: invalid"
+                f" advanced_options_config.log_level {ll_val!r}"
+                f" (must be one of {sorted(_VALID_LOG_LEVELS)})"
+            )
+
+    # adaptive_protection_config sub-structure
+    ap_cfg = settings.get("adaptive_protection_config")
+    if isinstance(ap_cfg, dict):
+        l7_cfg = ap_cfg.get("layer7_ddos_defense_config")
+        if isinstance(l7_cfg, dict):
+            enable_val = l7_cfg.get("enable")
+            if enable_val is not None and not isinstance(enable_val, bool):
+                errors.append(
+                    f"  {zone_name}/{_EXT_KEY}: invalid"
+                    f" adaptive_protection_config.layer7_ddos_defense_config.enable"
+                    f" {enable_val!r} (must be a bool)"
+                )
+            rv_val = l7_cfg.get("rule_visibility")
+            if rv_val is not None and rv_val not in _VALID_RULE_VISIBILITY:
+                errors.append(
+                    f"  {zone_name}/{_EXT_KEY}: invalid"
+                    f" adaptive_protection_config.layer7_ddos_defense_config.rule_visibility"
+                    f" {rv_val!r} (must be one of {sorted(_VALID_RULE_VISIBILITY)})"
+                )
 
 
 def _dump_policy_settings(scope, provider, out_dir):

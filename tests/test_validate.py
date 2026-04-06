@@ -100,6 +100,14 @@ class TestUnknownFields:
         )
         assert "GA020" not in _ids(validate_rules([r]))
 
+    def test_ga020_network_match_not_flagged(self):
+        r = _rule(network_match={"src_ip_ranges": ["10.0.0.0/8"]})
+        assert "GA020" not in _ids(validate_rules([r]))
+
+    def test_ga020_preconfigured_waf_config_not_flagged(self):
+        r = _rule(preconfigured_waf_config={"waf_rules": []})
+        assert "GA020" not in _ids(validate_rules([r]))
+
     def test_ga020_message_includes_field_name(self):
         r = _rule(typo_field="val")
         results = validate_rules([r])
@@ -251,6 +259,7 @@ class TestActions:
             "allow",
             "deny(403)",
             "deny(404)",
+            "deny(429)",
             "deny(502)",
             "throttle",
             "rate_based_ban",
@@ -298,6 +307,10 @@ class TestActions:
 
     def test_ga201_deny_200(self):
         assert "GA201" in _ids(validate_rules([_rule(action="deny(200)")]))
+
+    def test_ga201_deny_429_valid(self):
+        """deny(429) is a valid deny status and should not trigger GA201."""
+        assert "GA201" not in _ids(validate_rules([_rule(action="deny(429)")]))
 
 
 # ---------------------------------------------------------------------------
@@ -891,6 +904,22 @@ class TestMatchDeep:
         match = {"expr": {"expression": "evaluateJsonPath(request.body, '$.user')"}}
         assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
 
+    def test_ga311_known_evaluateAdaptiveProtection(self):
+        match = {"expr": {"expression": "evaluateAdaptiveProtection()"}}
+        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga311_known_evaluateAdaptiveProtectionAutoDeploy(self):
+        match = {"expr": {"expression": "evaluateAdaptiveProtectionAutoDeploy()"}}
+        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga311_known_urlDecode(self):
+        match = {"expr": {"expression": "request.path.urlDecode().contains('/admin')"}}
+        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga311_known_htmlDecode(self):
+        match = {"expr": {"expression": "request.body.htmlDecode().contains('<script')"}}
+        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+
     def test_ga311_deduped(self):
         match = {"expr": {"expression": "badFunc(1) || badFunc(2)"}}
         results = validate_rules([_rule(match=match)])
@@ -1067,7 +1096,19 @@ class TestRateLimitDeep:
 
     @pytest.mark.parametrize(
         "key",
-        ["IP", "ALL", "HTTP_HEADER", "XFF_IP", "HTTP_COOKIE", "HTTP_PATH", "SNI", "REGION_CODE"],
+        [
+            "IP",
+            "ALL",
+            "HTTP_HEADER",
+            "XFF_IP",
+            "HTTP_COOKIE",
+            "HTTP_PATH",
+            "SNI",
+            "REGION_CODE",
+            "TLS_JA3_FINGERPRINT",
+            "TLS_JA4_FINGERPRINT",
+            "USER_IP",
+        ],
     )
     def test_ga423_valid_keys(self, key):
         rlo = {
@@ -3207,3 +3248,182 @@ class TestGA408GA421NoDuplicate:
         ids = _ids(results)
         assert "GA421" in ids
         assert "GA408" not in ids
+
+
+# ---------------------------------------------------------------------------
+# GA423  enforce_on_key_type validation within enforce_on_key_configs
+# ---------------------------------------------------------------------------
+class TestGA423InConfigs:
+    def _rl_rule_with_configs(self, configs, **extra):
+        rlo = {
+            "conform_action": "allow",
+            "exceed_action": "deny-429",
+            "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+            "enforce_on_key_configs": configs,
+        }
+        rlo.update(extra)
+        return _rule(action="throttle", rate_limit_options=rlo)
+
+    def test_ga423_valid_key_type_in_configs(self):
+        configs = [{"enforce_on_key_type": "IP"}]
+        r = self._rl_rule_with_configs(configs)
+        assert "GA423" not in _ids(validate_rules([r]))
+
+    def test_ga423_invalid_key_type_in_configs(self):
+        configs = [{"enforce_on_key_type": "BOGUS"}]
+        r = self._rl_rule_with_configs(configs)
+        results = validate_rules([r])
+        assert "GA423" in _ids(results)
+        ga423 = [r for r in results if r.rule_id == "GA423"]
+        assert "BOGUS" in ga423[0].message
+
+    def test_ga423_multiple_configs_mixed(self):
+        """One valid, one invalid key type in configs."""
+        configs = [
+            {"enforce_on_key_type": "IP"},
+            {"enforce_on_key_type": "INVALID"},
+        ]
+        r = self._rl_rule_with_configs(configs)
+        results = validate_rules([r])
+        ga423 = [r for r in results if r.rule_id == "GA423"]
+        assert len(ga423) == 1
+        assert "INVALID" in ga423[0].message
+
+    def test_ga423_all_valid_key_types_in_configs(self):
+        """All known key types pass validation."""
+        from octorules_google.validate import _VALID_ENFORCE_ON_KEYS
+
+        for key_type in sorted(_VALID_ENFORCE_ON_KEYS):
+            configs = [{"enforce_on_key_type": key_type}]
+            r = self._rl_rule_with_configs(configs)
+            assert "GA423" not in _ids(validate_rules([r])), f"{key_type} should be valid"
+
+
+# ---------------------------------------------------------------------------
+# GA325  header_action sub-structure validation
+# ---------------------------------------------------------------------------
+class TestGA325:
+    def test_ga325_valid_header_action(self):
+        r = _rule(
+            header_action={
+                "request_headers_to_adds": [
+                    {"header_name": "X-Foo", "header_value": "bar"},
+                ]
+            }
+        )
+        assert "GA325" not in _ids(validate_rules([r]))
+
+    def test_ga325_header_action_not_dict(self):
+        r = _rule(header_action="invalid")
+        assert "GA325" in _ids(validate_rules([r]))
+
+    def test_ga325_request_headers_to_adds_not_list(self):
+        r = _rule(header_action={"request_headers_to_adds": "invalid"})
+        assert "GA325" in _ids(validate_rules([r]))
+
+    def test_ga325_entry_not_dict(self):
+        r = _rule(header_action={"request_headers_to_adds": ["invalid"]})
+        assert "GA325" in _ids(validate_rules([r]))
+
+    def test_ga325_entry_missing_header_name(self):
+        r = _rule(header_action={"request_headers_to_adds": [{"header_value": "bar"}]})
+        results = validate_rules([r])
+        ga325 = [r for r in results if r.rule_id == "GA325"]
+        assert len(ga325) == 1
+        assert "header_name" in ga325[0].message
+
+    def test_ga325_entry_missing_header_value(self):
+        r = _rule(header_action={"request_headers_to_adds": [{"header_name": "X-Foo"}]})
+        results = validate_rules([r])
+        ga325 = [r for r in results if r.rule_id == "GA325"]
+        assert len(ga325) == 1
+        assert "header_value" in ga325[0].message
+
+    def test_ga325_entry_missing_both_fields(self):
+        r = _rule(header_action={"request_headers_to_adds": [{}]})
+        results = validate_rules([r])
+        ga325 = [r for r in results if r.rule_id == "GA325"]
+        assert len(ga325) == 2  # one for header_name, one for header_value
+
+    def test_ga325_no_request_headers_to_adds_ok(self):
+        """header_action without request_headers_to_adds is fine."""
+        r = _rule(header_action={})
+        assert "GA325" not in _ids(validate_rules([r]))
+
+    def test_ga325_empty_list_ok(self):
+        """Empty request_headers_to_adds list is fine."""
+        r = _rule(header_action={"request_headers_to_adds": []})
+        assert "GA325" not in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA326  network_match sub-structure validation
+# ---------------------------------------------------------------------------
+class TestGA326:
+    def test_ga326_valid_network_match(self):
+        r = _rule(network_match={"user_defined_fields": []})
+        assert "GA326" not in _ids(validate_rules([r]))
+
+    def test_ga326_network_match_not_dict(self):
+        r = _rule(network_match="invalid")
+        assert "GA326" in _ids(validate_rules([r]))
+
+    def test_ga326_network_match_list(self):
+        r = _rule(network_match=["invalid"])
+        assert "GA326" in _ids(validate_rules([r]))
+
+    def test_ga326_absent_is_ok(self):
+        r = _rule()
+        assert "GA326" not in _ids(validate_rules([r]))
+
+
+# ---------------------------------------------------------------------------
+# GA327  preconfigured_waf_config sub-structure validation
+# ---------------------------------------------------------------------------
+class TestGA327:
+    def test_ga327_valid_config(self):
+        r = _rule(preconfigured_waf_config={"exclusions": [{"target_rule_set": "sqli-v33-stable"}]})
+        assert "GA327" not in _ids(validate_rules([r]))
+
+    def test_ga327_config_not_dict(self):
+        r = _rule(preconfigured_waf_config="invalid")
+        assert "GA327" in _ids(validate_rules([r]))
+
+    def test_ga327_exclusions_not_list(self):
+        r = _rule(preconfigured_waf_config={"exclusions": "invalid"})
+        assert "GA327" in _ids(validate_rules([r]))
+
+    def test_ga327_exclusion_not_dict(self):
+        r = _rule(preconfigured_waf_config={"exclusions": ["invalid"]})
+        assert "GA327" in _ids(validate_rules([r]))
+
+    def test_ga327_exclusion_missing_target_rule_set(self):
+        r = _rule(preconfigured_waf_config={"exclusions": [{"other": "x"}]})
+        results = validate_rules([r])
+        ga327 = [r for r in results if r.rule_id == "GA327"]
+        assert len(ga327) == 1
+        assert "target_rule_set" in ga327[0].message
+
+    def test_ga327_no_exclusions_ok(self):
+        """preconfigured_waf_config without exclusions is fine."""
+        r = _rule(preconfigured_waf_config={})
+        assert "GA327" not in _ids(validate_rules([r]))
+
+    def test_ga327_empty_exclusions_ok(self):
+        """Empty exclusions list is fine."""
+        r = _rule(preconfigured_waf_config={"exclusions": []})
+        assert "GA327" not in _ids(validate_rules([r]))
+
+    def test_ga327_multiple_exclusions_mixed(self):
+        """One valid, one invalid exclusion entry."""
+        r = _rule(
+            preconfigured_waf_config={
+                "exclusions": [
+                    {"target_rule_set": "sqli-v33-stable"},
+                    {"not_target": "xss-v33-stable"},
+                ]
+            }
+        )
+        results = validate_rules([r])
+        ga327 = [r for r in results if r.rule_id == "GA327"]
+        assert len(ga327) == 1

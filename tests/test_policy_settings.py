@@ -508,14 +508,14 @@ class TestValidateExtension:
 
     def test_valid_all_default_actions(self):
         """All valid default actions pass validation."""
-        for action in ("allow", "deny(403)", "deny(404)", "deny(502)"):
+        for action in ("allow", "deny(403)", "deny(404)", "deny(429)", "deny(502)"):
             desired = {"gcloud_armor_policy_settings": {"default_rule_action": action}}
             errors: list[str] = []
             _validate_policy_settings(desired, "zone", errors, [])
             assert errors == [], f"Action {action!r} should be valid"
 
     def test_valid_ddos_values(self):
-        for val in ("STANDARD", "ADVANCED"):
+        for val in ("STANDARD", "ADVANCED", "ADVANCED_PREVIEW"):
             desired = {
                 "gcloud_armor_policy_settings": {"ddos_protection_config": {"ddos_protection": val}}
             }
@@ -969,6 +969,196 @@ class TestProviderUpdatePolicySettings:
         provider = CloudArmorProvider(client=client, project="test-project")
         provider.update_policy_settings(_scope(), {})
         client.patch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Validate extension — log_level
+# ---------------------------------------------------------------------------
+class TestValidateLogLevel:
+    def test_valid_log_levels(self):
+        for val in ("NORMAL", "VERBOSE"):
+            desired = {
+                "gcloud_armor_policy_settings": {"advanced_options_config": {"log_level": val}}
+            }
+            errors: list[str] = []
+            _validate_policy_settings(desired, "zone", errors, [])
+            assert errors == [], f"log_level {val!r} should be valid"
+
+    def test_invalid_log_level(self):
+        desired = {
+            "gcloud_armor_policy_settings": {"advanced_options_config": {"log_level": "DEBUG"}}
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert len(errors) == 1
+        assert "log_level" in errors[0]
+        assert "DEBUG" in errors[0]
+
+    def test_none_log_level_ok(self):
+        desired = {"gcloud_armor_policy_settings": {"advanced_options_config": {"log_level": None}}}
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# Validate extension — adaptive_protection_config sub-structure
+# ---------------------------------------------------------------------------
+class TestValidateAdaptiveProtection:
+    def test_valid_config(self):
+        desired = {
+            "gcloud_armor_policy_settings": {
+                "adaptive_protection_config": {
+                    "layer7_ddos_defense_config": {
+                        "enable": True,
+                        "rule_visibility": "STANDARD",
+                    }
+                }
+            }
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert errors == []
+
+    def test_enable_not_bool(self):
+        desired = {
+            "gcloud_armor_policy_settings": {
+                "adaptive_protection_config": {"layer7_ddos_defense_config": {"enable": "yes"}}
+            }
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert len(errors) == 1
+        assert "enable" in errors[0]
+        assert "bool" in errors[0]
+
+    def test_enable_int_not_bool(self):
+        """Integer 1 should be rejected — must be actual bool."""
+        desired = {
+            "gcloud_armor_policy_settings": {
+                "adaptive_protection_config": {"layer7_ddos_defense_config": {"enable": 1}}
+            }
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert len(errors) == 1
+
+    def test_invalid_rule_visibility(self):
+        desired = {
+            "gcloud_armor_policy_settings": {
+                "adaptive_protection_config": {
+                    "layer7_ddos_defense_config": {"rule_visibility": "BASIC"}
+                }
+            }
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert len(errors) == 1
+        assert "rule_visibility" in errors[0]
+        assert "BASIC" in errors[0]
+
+    def test_valid_rule_visibility_values(self):
+        for val in ("PREMIUM", "STANDARD"):
+            desired = {
+                "gcloud_armor_policy_settings": {
+                    "adaptive_protection_config": {
+                        "layer7_ddos_defense_config": {"rule_visibility": val}
+                    }
+                }
+            }
+            errors: list[str] = []
+            _validate_policy_settings(desired, "zone", errors, [])
+            assert errors == [], f"rule_visibility {val!r} should be valid"
+
+    def test_none_values_ok(self):
+        desired = {
+            "gcloud_armor_policy_settings": {
+                "adaptive_protection_config": {
+                    "layer7_ddos_defense_config": {
+                        "enable": None,
+                        "rule_visibility": None,
+                    }
+                }
+            }
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert errors == []
+
+    def test_non_dict_layer7_config_skipped(self):
+        desired = {
+            "gcloud_armor_policy_settings": {
+                "adaptive_protection_config": {"layer7_ddos_defense_config": "not-a-dict"}
+            }
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert errors == []
+
+    def test_non_dict_adaptive_config_skipped(self):
+        desired = {"gcloud_armor_policy_settings": {"adaptive_protection_config": "not-a-dict"}}
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# Normalize/denormalize — recaptcha_options_config
+# ---------------------------------------------------------------------------
+class TestRecaptchaOptionsConfig:
+    def test_normalize_includes_recaptcha(self):
+        policy = {
+            "recaptcha_options_config": {"redirect_site_key": "key123"},
+            "rules": [{"priority": 2147483647, "action": "allow"}],
+        }
+        result = normalize_policy_settings(policy)
+        assert result["recaptcha_options_config"] == {"redirect_site_key": "key123"}
+
+    def test_normalize_without_recaptcha(self):
+        policy = {"rules": [{"priority": 2147483647, "action": "allow"}]}
+        result = normalize_policy_settings(policy)
+        assert "recaptcha_options_config" not in result
+
+    def test_denormalize_includes_recaptcha(self):
+        settings = {"recaptcha_options_config": {"redirect_site_key": "key123"}}
+        result = denormalize_policy_settings(settings)
+        assert "policy_fields" in result
+        assert result["policy_fields"]["recaptcha_options_config"] == {
+            "redirect_site_key": "key123"
+        }
+
+    def test_denormalize_recaptcha_with_other_fields(self):
+        settings = {
+            "recaptcha_options_config": {"redirect_site_key": "key123"},
+            "default_rule_action": "deny(403)",
+        }
+        result = denormalize_policy_settings(settings)
+        assert result["policy_fields"]["recaptcha_options_config"] == {
+            "redirect_site_key": "key123"
+        }
+        assert result["default_rule_action"] == "deny(403)"
+
+    def test_round_trip(self):
+        policy = {
+            "recaptcha_options_config": {"redirect_site_key": "key123"},
+            "rules": [{"priority": 2147483647, "action": "allow"}],
+        }
+        normalized = normalize_policy_settings(policy)
+        denormalized = denormalize_policy_settings(normalized)
+        assert denormalized["policy_fields"]["recaptcha_options_config"] == {
+            "redirect_site_key": "key123"
+        }
+
+
+# ---------------------------------------------------------------------------
+# Validate extension — deny(429) default action
+# ---------------------------------------------------------------------------
+class TestValidateDeny429:
+    def test_deny_429_is_valid(self):
+        desired = {"gcloud_armor_policy_settings": {"default_rule_action": "deny(429)"}}
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert errors == []
 
 
 # ---------------------------------------------------------------------------

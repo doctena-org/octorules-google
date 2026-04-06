@@ -1,6 +1,6 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **71 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **74 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
 
 ### Suppressing rules
 
@@ -81,6 +81,9 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA317b](#ga317b--privatereserved-ip-range-in-iniprange) | Private/reserved IP range in inIpRange() | WARNING |
 | [GA318](#ga318--cel-type-mismatch) | CEL type mismatch | WARNING |
 | [GA319](#ga319--case-sensitive-string-comparison) | Case-sensitive string comparison may need case-insensitive matching | INFO |
+| [GA325](#ga325--invalid-header_action-sub-structure) | Invalid header_action sub-structure | ERROR |
+| [GA326](#ga326--network_match-must-be-a-dict) | network_match must be a dict | ERROR |
+| [GA327](#ga327--invalid-preconfigured_waf_config-exclusions) | Invalid preconfigured_waf_config exclusions | ERROR |
 | [GA400](#ga400--rate-limit-action-requires-rate_limit_options) | Rate-limit action requires 'rate_limit_options' | ERROR |
 | [GA401](#ga401--redirect-action-requires-redirect_options) | Redirect action requires 'redirect_options' | ERROR |
 | [GA402](#ga402--invalid-redirect-type) | Invalid redirect type | ERROR |
@@ -474,7 +477,7 @@ gcloud_armor_custom_rules:
 
 ---
 
-## Match / Expression / CEL (GA300--GA319)
+## Match / Expression / CEL / Sub-structure (GA300--GA327)
 
 ### GA300 -- Match must have 'expr' or 'config'+'versioned_expr', not both/neither
 
@@ -923,6 +926,108 @@ gcloud_armor_custom_rules:
 ```
 
 **Fix:** Use `matches()` with the `(?i)` flag for case-insensitive matching: `request.path.matches('(?i)/admin')`.
+
+---
+
+### GA325 -- Invalid header_action sub-structure
+
+**Severity:** ERROR
+
+Validates the `header_action` field structure. Checks that `header_action` is a dict, `request_headers_to_adds` (if present) is a list of dicts, and each entry contains the required `header_name` and `header_value` keys.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: allow
+    match:
+      expr:
+        expression: "true"
+    header_action: "not-a-dict"
+```
+
+or:
+
+```yaml
+    header_action:
+      request_headers_to_adds:
+        - header_name: X-Custom
+          # missing header_value
+```
+
+**Fix:** Ensure `header_action` is a dict with `request_headers_to_adds` as a list of `{header_name, header_value}` entries:
+
+```yaml
+    header_action:
+      request_headers_to_adds:
+        - header_name: X-Custom
+          header_value: my-value
+```
+
+---
+
+### GA326 -- network_match must be a dict
+
+**Severity:** ERROR
+
+The `network_match` field, if present, must be a dict. This field is used for network-level matching configuration.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "true"
+    network_match: "not-a-dict"
+```
+
+**Fix:** Provide `network_match` as a dict:
+
+```yaml
+    network_match:
+      src_ip_ranges:
+        - "10.0.0.0/8"
+```
+
+---
+
+### GA327 -- Invalid preconfigured_waf_config exclusions
+
+**Severity:** ERROR
+
+Validates the `preconfigured_waf_config` field structure. Checks that it is a dict, `exclusions` (if present) is a list of dicts, and each exclusion entry contains a `target_rule_set` key.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_preconfigured_rules:
+  - ref: "3000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "evaluatePreconfiguredWaf('sqli-v33-stable')"
+    preconfigured_waf_config:
+      exclusions:
+        - request_header:
+            - op: EQUALS
+              val: "X-Custom"
+          # missing target_rule_set
+```
+
+**Fix:** Add `target_rule_set` to each exclusion entry:
+
+```yaml
+    preconfigured_waf_config:
+      exclusions:
+        - target_rule_set: "sqli-v33-stable"
+          request_header:
+            - op: EQUALS
+              val: "X-Custom"
+```
 
 ---
 
