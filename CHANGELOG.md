@@ -2,9 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.8.1] - 2026-04-06
+## [0.8.2] - 2026-04-07
 
 ### Added
 - **GA325** (ERROR): `header_action` sub-structure validation — checks that
@@ -13,6 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **GA326** (ERROR): `network_match` must be a dict.
 - **GA327** (ERROR): `preconfigured_waf_config` exclusions validation — checks
   that `exclusions` is a list of dicts, each with a `target_rule_set` key.
+
+### Changed
+- **GA317b** renamed to **GA320** (private/reserved IP range in `inIpRange()`)
+  to follow the standard `[PREFIX][DIGITS]` rule ID convention. Update any
+  `# octorules:disable=GA317b` suppression comments to `GA320`.
+
+### Fixed
+- `update_policy_settings` now retries the initial GET (`_get_policy`) on
+  transient errors, matching the retry behaviour of the subsequent PATCH.
+- `recaptcha_options_config` type-checked: non-dict values now produce a
+  validation error instead of passing through silently.
+
+## [0.8.1] - 2026-04-06
+
+### Added
 - `deny(429)` added to valid deny status codes and default action choices.
 - `evaluateAdaptiveProtection`, `evaluateAdaptiveProtectionAutoDeploy`,
   `urlDecode`, `htmlDecode` added to known CEL functions.
@@ -185,7 +201,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **GA316** (WARNING): Unknown HTTP method in `request.method` comparisons with
   fuzzy-match suggestions for typos.
 - **GA317** (ERROR): Invalid CIDR notation inside `inIpRange()` calls.
-- **GA317b** (WARNING): Private/reserved IP range inside `inIpRange()` calls.
+- **GA320** (WARNING): Private/reserved IP range inside `inIpRange()` calls.
 - **GA318** (WARNING): CEL type mismatch detection (e.g., `origin.ip == 42` where
   `origin.ip` is a string).
 - **GA319** (INFO): Case-sensitive string comparison on `request.path`,

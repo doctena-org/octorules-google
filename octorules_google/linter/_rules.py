@@ -223,7 +223,7 @@ GA316 = RuleMeta(
     Severity.WARNING,
 )
 GA317 = RuleMeta("GA317", "match", "Invalid CIDR in inIpRange()", Severity.ERROR)
-GA317b = RuleMeta("GA317b", "match", "Private/reserved IP range in inIpRange()", Severity.WARNING)
+GA320 = RuleMeta("GA320", "match", "Private/reserved IP range in inIpRange()", Severity.WARNING)
 GA318 = RuleMeta("GA318", "match", "CEL type mismatch", Severity.WARNING)
 GA319 = RuleMeta(
     "GA319",
@@ -231,6 +231,10 @@ GA319 = RuleMeta(
     "Case-sensitive string comparison may need case-insensitive matching",
     Severity.INFO,
 )
+
+GA325 = RuleMeta("GA325", "match", "Invalid header_action structure", Severity.ERROR)
+GA326 = RuleMeta("GA326", "match", "Invalid network_match structure", Severity.ERROR)
+GA327 = RuleMeta("GA327", "match", "Invalid preconfigured_waf_config structure", Severity.ERROR)
 
 # Category GA5xx — Description & IP range checks
 GA500 = RuleMeta(

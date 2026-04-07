@@ -298,7 +298,10 @@ class CloudArmorProvider:
         # default rule's action field.
         default_action = payload.get("default_rule_action")
         if default_action is not None:
-            policy = self._get_policy(scope)
+            policy = _retry_transient(
+                lambda: self._get_policy(scope),
+                label=f"get_policy({policy_name})",
+            )
             rules = policy.get("rules", [])
             updated_rules = []
             for rule in rules:

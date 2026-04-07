@@ -2387,29 +2387,29 @@ class TestGA317:
         ga317 = [r for r in results if r.rule_id == "GA317"]
         assert len(ga317) == 1
 
-    def test_ga317b_private_range(self):
+    def test_ga320_private_range(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '192.168.1.0/24')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA317b" in _ids(results)
+        assert "GA320" in _ids(results)
 
-    def test_ga317b_loopback(self):
+    def test_ga320_loopback(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '127.0.0.1/32')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA317b" in _ids(results)
+        assert "GA320" in _ids(results)
 
-    def test_ga317b_rfc1918_10(self):
+    def test_ga320_rfc1918_10(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '10.0.0.0/8')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA317b" in _ids(results)
+        assert "GA320" in _ids(results)
 
-    def test_ga317b_public_no_warning(self):
+    def test_ga320_public_no_warning(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '8.8.8.0/24')"}}
-        assert "GA317b" not in _ids(validate_rules([_rule(match=match)]))
+        assert "GA320" not in _ids(validate_rules([_rule(match=match)]))
 
-    def test_ga317b_ipv6_ula(self):
+    def test_ga320_ipv6_ula(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, 'fd00::/8')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA317b" in _ids(results)
+        assert "GA320" in _ids(results)
 
     def test_ga317_double_quoted(self):
         match = {"expr": {"expression": 'inIpRange(origin.ip, "8.8.8.0/24")'}}

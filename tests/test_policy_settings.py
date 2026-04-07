@@ -1,8 +1,9 @@
 """Tests for Google Cloud Armor policy settings normalization and extension hooks."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+from google.api_core.exceptions import ServiceUnavailable
 from octorules.provider.base import Scope
 
 from octorules_google._policy_settings import (
@@ -556,6 +557,28 @@ class TestValidateExtension:
         _validate_policy_settings(desired, "zone", errors, [])
         assert errors == []
 
+    def test_recaptcha_options_config_non_dict(self):
+        desired = {
+            "gcloud_armor_policy_settings": {
+                "recaptcha_options_config": "not_a_dict",
+            }
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert len(errors) == 1
+        assert "recaptcha_options_config" in errors[0]
+        assert "mapping" in errors[0]
+
+    def test_recaptcha_options_config_valid_dict(self):
+        desired = {
+            "gcloud_armor_policy_settings": {
+                "recaptcha_options_config": {"redirect_site_key": "key123"},
+            }
+        }
+        errors: list[str] = []
+        _validate_policy_settings(desired, "zone", errors, [])
+        assert errors == []
+
 
 # ---------------------------------------------------------------------------
 # Dump extension
@@ -969,6 +992,38 @@ class TestProviderUpdatePolicySettings:
         provider = CloudArmorProvider(client=client, project="test-project")
         provider.update_policy_settings(_scope(), {})
         client.patch.assert_not_called()
+
+    def test_update_default_rule_action_retries_get_policy(self):
+        """Regression: _get_policy inside update_policy_settings is retried on transient error."""
+        from octorules_google import CloudArmorProvider
+
+        policy_dict = {
+            "name": "my-policy",
+            "rules": [
+                {"priority": 2147483647, "action": "allow"},
+            ],
+        }
+        client = MagicMock()
+        client.get.side_effect = [
+            ServiceUnavailable("503"),
+            policy_dict,
+        ]
+        client.patch.return_value = None
+        provider = CloudArmorProvider(client=client, project="test-project")
+
+        with patch("octorules.retry.time.sleep"):
+            provider.update_policy_settings(
+                _scope(),
+                {"default_rule_action": "deny(502)"},
+            )
+
+        # client.get was called twice: first failed, second succeeded
+        assert client.get.call_count == 2
+        # The patch should still have been applied with updated default rule
+        client.patch.assert_called_once()
+        resource = client.patch.call_args[1]["security_policy_resource"]
+        default_rule = next(r for r in resource["rules"] if r["priority"] == 2147483647)
+        assert default_rule["action"] == "deny(502)"
 
 
 # ---------------------------------------------------------------------------

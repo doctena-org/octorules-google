@@ -263,6 +263,10 @@ def _validate_policy_settings(desired, zone_name, errors, lines):
                     f" {rv_val!r} (must be one of {sorted(_VALID_RULE_VISIBILITY)})"
                 )
 
+    rc_cfg = settings.get("recaptcha_options_config")
+    if rc_cfg is not None and not isinstance(rc_cfg, dict):
+        errors.append(f"recaptcha_options_config must be a mapping, got {type(rc_cfg).__name__}")
+
 
 def _dump_policy_settings(scope, provider, out_dir):
     """Export current policy settings to dump output."""

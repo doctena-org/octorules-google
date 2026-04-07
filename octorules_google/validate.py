@@ -1269,7 +1269,7 @@ def _check_cel_iniprange_cidr(
     phase: str,
     ref: str,
 ) -> None:
-    """GA317/GA317b: validate CIDR notation inside inIpRange() calls."""
+    """GA317/GA320: validate CIDR notation inside inIpRange() calls."""
     for m in _IN_IP_RANGE_RE.finditer(expr):
         cidr = m.group(1)
         try:
@@ -1287,12 +1287,12 @@ def _check_cel_iniprange_cidr(
             )
             continue
 
-        # GA317b: check for private/reserved ranges
+        # GA320: check for private/reserved ranges
         for private in _PRIVATE_SUPERNETS:
             if net.version == private.version and net.subnet_of(private):
                 results.append(
                     _result(
-                        rule_id="GA317b",
+                        rule_id="GA320",
                         severity=Severity.WARNING,
                         message=(f"Private/reserved IP range in inIpRange(): {cidr!r}"),
                         phase=phase,

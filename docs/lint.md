@@ -78,9 +78,9 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA315](#ga315--unknown-country-code-in-originregion_code-comparison) | Unknown country code in origin.region_code comparison | WARNING |
 | [GA316](#ga316--unknown-http-method-in-requestmethod-comparison) | Unknown HTTP method in request.method comparison | WARNING |
 | [GA317](#ga317--invalid-cidr-in-iniprange) | Invalid CIDR in inIpRange() | ERROR |
-| [GA317b](#ga317b--privatereserved-ip-range-in-iniprange) | Private/reserved IP range in inIpRange() | WARNING |
 | [GA318](#ga318--cel-type-mismatch) | CEL type mismatch | WARNING |
 | [GA319](#ga319--case-sensitive-string-comparison) | Case-sensitive string comparison may need case-insensitive matching | INFO |
+| [GA320](#ga320--privatereserved-ip-range-in-iniprange) | Private/reserved IP range in inIpRange() | WARNING |
 | [GA325](#ga325--invalid-header_action-sub-structure) | Invalid header_action sub-structure | ERROR |
 | [GA326](#ga326--network_match-must-be-a-dict) | network_match must be a dict | ERROR |
 | [GA327](#ga327--invalid-preconfigured_waf_config-exclusions) | Invalid preconfigured_waf_config exclusions | ERROR |
@@ -864,27 +864,6 @@ gcloud_armor_custom_rules:
 
 ---
 
-### GA317b -- Private/reserved IP range in inIpRange()
-
-**Severity:** WARNING
-
-Flags private or reserved IP ranges (RFC 1918, loopback, link-local, ULA) inside `inIpRange()` calls. Cloud Armor operates on public internet traffic, so private ranges are likely mistakes.
-
-**Triggers on:**
-
-```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
-    action: deny(403)
-    match:
-      expr:
-        expression: "inIpRange(origin.ip, '192.168.1.0/24')"
-```
-
-**Fix:** Use public IP ranges, or suppress with `# octorules:disable=GA317b` if intentional.
-
----
-
 ### GA318 -- CEL type mismatch
 
 **Severity:** WARNING
@@ -926,6 +905,27 @@ gcloud_armor_custom_rules:
 ```
 
 **Fix:** Use `matches()` with the `(?i)` flag for case-insensitive matching: `request.path.matches('(?i)/admin')`.
+
+---
+
+### GA320 -- Private/reserved IP range in inIpRange()
+
+**Severity:** WARNING
+
+Flags private or reserved IP ranges (RFC 1918, loopback, link-local, ULA) inside `inIpRange()` calls. Cloud Armor operates on public internet traffic, so private ranges are likely mistakes.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "inIpRange(origin.ip, '192.168.1.0/24')"
+```
+
+**Fix:** Use public IP ranges, or suppress with `# octorules:disable=GA320` if intentional.
 
 ---
 
