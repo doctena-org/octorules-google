@@ -265,6 +265,7 @@ class CloudArmorProvider:
         from octorules_google._policy_settings import normalize_policy_settings
 
         policy = self._get_policy(scope)
+        log.debug("GET policy_settings %s", scope.zone_id)
         return normalize_policy_settings(policy)
 
     @_wrap_provider_errors
@@ -339,6 +340,7 @@ class CloudArmorProvider:
             )
         except NotFound:
             raise ConfigError(f"No security policy found for {zone_name!r}") from None
+        log.debug("Resolved %s -> %s", zone_name, zone_name)
         return zone_name
 
     @_wrap_provider_errors
@@ -348,7 +350,9 @@ class CloudArmorProvider:
             project=self._project,
             timeout=self._timeout,
         )
-        return [policy.name for policy in response]
+        result = [policy.name for policy in response]
+        log.debug("list_zones: %d policies in project %s", len(result), self._project)
+        return result
 
     # -- Phase rules --
 
@@ -358,7 +362,9 @@ class CloudArmorProvider:
         if provider_id not in _GCLOUD_PHASE_IDS:
             return []
         rules = self._get_rules(scope)
-        return [_normalize_rule(r) for r in rules if _classify_phase(r) == provider_id]
+        result = [_normalize_rule(r) for r in rules if _classify_phase(r) == provider_id]
+        log.debug("get_phase_rules %s/%s: %d rules", scope.zone_id, provider_id, len(result))
+        return result
 
     @_wrap_provider_errors
     def put_phase_rules(self, scope: Scope, provider_id: str, rules: list[dict]) -> int:
@@ -482,6 +488,7 @@ class CloudArmorProvider:
         if not phases_to_fetch:
             return PhaseRulesResult({}, failed_phases=[])
 
+        log.debug("Fetching %d phase(s) for %s", len(phases_to_fetch), scope.zone_id)
         all_rules = self._get_rules(scope)
 
         result: dict[str, list[dict]] = {}
