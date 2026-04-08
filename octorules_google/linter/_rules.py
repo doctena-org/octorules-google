@@ -7,6 +7,9 @@ from octorules.linter.rules.registry import RuleMeta
 GA001 = RuleMeta("GA001", "structure", "Rule missing 'ref'", Severity.ERROR)
 GA002 = RuleMeta("GA002", "structure", "Rule missing 'action'", Severity.ERROR)
 GA003 = RuleMeta("GA003", "structure", "Rule missing 'match'", Severity.ERROR)
+GA004 = RuleMeta("GA004", "structure", "Rule entry is not a dict", Severity.ERROR)
+GA005 = RuleMeta("GA005", "structure", "Duplicate ref within phase", Severity.ERROR)
+GA006 = RuleMeta("GA006", "structure", "Phase value is not a list", Severity.ERROR)
 GA020 = RuleMeta("GA020", "structure", "Unknown top-level rule field", Severity.ERROR)
 
 # Category GA1xx — Priority & cross-rule checks

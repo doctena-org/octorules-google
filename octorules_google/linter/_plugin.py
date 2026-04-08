@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from octorules.linter.engine import LintContext
+from octorules.linter.engine import LintContext, LintResult, Severity
 from octorules.phases import PHASE_BY_NAME
 
 from octorules_google import GCLOUD_PHASE_NAMES
@@ -30,6 +30,16 @@ def google_lint(rules_data: dict[str, Any], ctx: LintContext) -> None:
         if ctx.phase_filter and phase_name not in ctx.phase_filter:
             continue
         if not isinstance(rules, list):
+            ctx.add(
+                LintResult(
+                    rule_id="GA006",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"Phase {phase_name!r} value must be a list, got {type(rules).__name__}"
+                    ),
+                    phase=phase_name,
+                )
+            )
             continue
 
         all_rules.extend(rules)

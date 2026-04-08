@@ -69,13 +69,40 @@ class TestGoogleLint:
         for r in ctx.results:
             assert r.phase == "gcloud_armor_rate_rules"
 
-    def test_skips_non_list_phase_values(self):
+    def test_ga006_non_list_phase_value(self):
         ctx = LintContext()
         rules_data = {
             "gcloud_armor_custom_rules": "not-a-list",
         }
         google_lint(rules_data, ctx)
-        assert ctx.results == []
+        ga006 = [r for r in ctx.results if r.rule_id == "GA006"]
+        assert len(ga006) == 1
+        assert ga006[0].phase == "gcloud_armor_custom_rules"
+        assert "str" in ga006[0].message
+
+    def test_ga006_dict_phase_value(self):
+        ctx = LintContext()
+        rules_data = {
+            "gcloud_armor_custom_rules": {"not": "a list"},
+        }
+        google_lint(rules_data, ctx)
+        ga006 = [r for r in ctx.results if r.rule_id == "GA006"]
+        assert len(ga006) == 1
+        assert "dict" in ga006[0].message
+
+    def test_ga006_not_triggered_for_valid_list(self):
+        ctx = LintContext()
+        rules_data = {
+            "gcloud_armor_custom_rules": [
+                {
+                    "ref": "100",
+                    "action": "allow",
+                    "match": {"expr": {"expression": "true"}},
+                },
+            ],
+        }
+        google_lint(rules_data, ctx)
+        assert "GA006" not in [r.rule_id for r in ctx.results]
 
     def test_valid_rules_no_results(self):
         ctx = LintContext()

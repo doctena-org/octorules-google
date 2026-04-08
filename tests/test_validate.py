@@ -174,6 +174,42 @@ class TestPriority:
         assert "GA102" not in _ids(validate_rules([a, b]))
 
 
+# ---------------------------------------------------------------------------
+# GA005  Duplicate ref within phase
+# ---------------------------------------------------------------------------
+class TestDuplicateRef:
+    def test_ga005_duplicate_ref(self):
+        a = _rule(ref="100")
+        b = _rule(ref="100")
+        ids = _ids(validate_rules([a, b]))
+        assert "GA005" in ids
+
+    def test_ga005_no_false_positive(self):
+        a = _rule(ref="100")
+        b = _rule(ref="200")
+        assert "GA005" not in _ids(validate_rules([a, b]))
+
+    def test_ga005_fires_once_for_triple(self):
+        """Three identical refs should emit GA005 only once (on second occurrence)."""
+        rules = [_rule(ref="100"), _rule(ref="100"), _rule(ref="100")]
+        ga005 = [r for r in validate_rules(rules) if r.rule_id == "GA005"]
+        assert len(ga005) == 1
+
+    def test_ga005_empty_ref_ignored(self):
+        """Rules with missing ref should not trigger GA005."""
+        a = _rule()
+        del a["ref"]
+        b = _rule()
+        del b["ref"]
+        assert "GA005" not in _ids(validate_rules([a, b]))
+
+    def test_ga005_ref_in_result(self):
+        a = _rule(ref="999")
+        b = _rule(ref="999")
+        results = [r for r in validate_rules([a, b]) if r.rule_id == "GA005"]
+        assert results[0].ref == "999"
+
+
 class TestDeadRules:
     def test_ga103_unreachable_after_allow_all(self):
         rules = [
@@ -3427,3 +3463,29 @@ class TestGA327:
         results = validate_rules([r])
         ga327 = [r for r in results if r.rule_id == "GA327"]
         assert len(ga327) == 1
+
+
+# ---------------------------------------------------------------------------
+# GA004: Rule entry is not a dict
+# ---------------------------------------------------------------------------
+class TestRuleEntryNotDict:
+    def test_string_entry(self):
+        """Non-dict rule entry produces GA004 error."""
+        results = validate_rules(["not a dict"])
+        assert "GA004" in _ids(results)
+
+    def test_int_entry(self):
+        results = validate_rules([42])
+        assert "GA004" in _ids(results)
+
+    def test_list_entry(self):
+        results = validate_rules([[1, 2, 3]])
+        assert "GA004" in _ids(results)
+
+    def test_mixed_valid_and_invalid(self):
+        """Valid dict rules still validated alongside non-dict entries."""
+        r = _rule()
+        results = validate_rules(["bad", r])
+        assert "GA004" in _ids(results)
+        ga004_count = sum(1 for res in results if res.rule_id == "GA004")
+        assert ga004_count == 1

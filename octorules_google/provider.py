@@ -550,12 +550,12 @@ class CloudArmorProvider:
     @_wrap_provider_errors
     def delete_list(self, scope: Scope, list_id: str) -> None:
         """Raise ConfigError; Cloud Armor does not support lists."""
-        raise ConfigError("Lists are not supported by Cloud Armor")
+        raise ConfigError("Lists are not supported by Cloud Armor (use inline IP ranges)")
 
     @_wrap_provider_errors
     def update_list_description(self, scope: Scope, list_id: str, description: str) -> None:
         """Raise ConfigError; Cloud Armor does not support lists."""
-        raise ConfigError("Lists are not supported by Cloud Armor")
+        raise ConfigError("Lists are not supported by Cloud Armor (use inline IP ranges)")
 
     @_wrap_provider_errors
     def get_list_items(self, scope: Scope, list_id: str) -> list[dict]:
@@ -565,7 +565,7 @@ class CloudArmorProvider:
     @_wrap_provider_errors
     def put_list_items(self, scope: Scope, list_id: str, items: list[dict]) -> str:
         """Raise ConfigError; Cloud Armor does not support lists."""
-        raise ConfigError("Lists are not supported by Cloud Armor")
+        raise ConfigError("Lists are not supported by Cloud Armor (use inline IP ranges)")
 
     @_wrap_provider_errors
     def poll_bulk_operation(

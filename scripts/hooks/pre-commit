@@ -6,5 +6,5 @@
 set -euo pipefail
 
 .venv/bin/pip install -e ".[dev]" -q
-.venv/bin/ruff check
-.venv/bin/ruff format --check
+.venv/bin/ruff check octorules_google/ tests/
+.venv/bin/ruff format --check octorules_google/ tests/

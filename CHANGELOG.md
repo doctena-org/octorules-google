@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.4] - 2026-04-08
+
+### Added
+- GA004 lint rule: "Rule entry is not a dict" (ERROR)
+- GA005 lint rule: "Duplicate ref within phase" (ERROR)
+- GA006 lint rule: "Phase value is not a list" (ERROR)
+
+### Changed
+- Lists error messages now consistently include "(use inline IP ranges)"
+  guidance
+- docs/lint.md: added auto-registration note
+
 ## [0.8.3] - 2026-04-07
 
 ### Added

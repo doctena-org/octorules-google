@@ -1,6 +1,8 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **74 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **77 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
+
+These rules are registered automatically when `octorules-google` is installed. They run alongside any core and other provider rules during `octorules lint`.
 
 ### Suppressing rules
 
@@ -52,6 +54,9 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA001](#ga001--rule-missing-ref) | Rule missing 'ref' | ERROR |
 | [GA002](#ga002--rule-missing-action) | Rule missing 'action' | ERROR |
 | [GA003](#ga003--rule-missing-match) | Rule missing 'match' | ERROR |
+| [GA004](#ga004--rule-entry-is-not-a-dict) | Rule entry is not a dict | ERROR |
+| [GA005](#ga005--duplicate-ref-within-phase) | Duplicate ref within phase | ERROR |
+| [GA006](#ga006--phase-value-is-not-a-list) | Phase value is not a list | ERROR |
 | [GA020](#ga020--unknown-top-level-rule-field) | Unknown top-level rule field | ERROR |
 | [GA100](#ga100--invalid-priority-must-be-non-negative-integer) | Invalid priority (must be non-negative integer) | ERROR |
 | [GA101](#ga101--priority-out-of-range-0-2147483646) | Priority out of range (0-2147483646) | ERROR |
@@ -126,7 +131,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 
 ---
 
-## Structure (GA001--GA003, GA020)
+## Structure (GA001--GA006, GA020)
 
 ### GA001 -- Rule missing 'ref'
 
@@ -200,6 +205,75 @@ gcloud_armor_custom_rules:
     match:
       expr:
         expression: "origin.region_code == 'CN'"
+```
+
+---
+
+### GA004 -- Rule entry is not a dict
+
+**Severity:** ERROR
+
+Each entry in a rules list must be a YAML mapping (dict). A bare scalar or list
+element (e.g. a string or integer) is always an authoring mistake.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - "not a dict"         # <-- string instead of mapping
+```
+
+**Fix:** Replace the scalar with a proper rule mapping.
+
+---
+
+### GA005 -- Duplicate ref within phase
+
+**Severity:** ERROR
+
+Two or more rules in the same phase share the same `ref` value. Each rule must have a unique ref within its phase so that priorities are unambiguous.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: allow
+    match:
+      expr:
+        expression: "true"
+  - ref: "1000"           # <-- duplicate
+    action: deny(403)
+    match:
+      expr:
+        expression: "origin.region_code == 'CN'"
+```
+
+**Fix:** Give each rule a unique `ref` (priority) value.
+
+---
+
+### GA006 -- Phase value is not a list
+
+**Severity:** ERROR
+
+A phase key must map to a YAML list of rule mappings. A scalar, dict, or other non-list value is always an authoring mistake.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules: "not-a-list"
+```
+
+**Fix:** Replace the value with a list of rule mappings:
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: allow
+    match:
+      expr:
+        expression: "true"
 ```
 
 ---

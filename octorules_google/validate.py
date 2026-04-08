@@ -298,8 +298,20 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
     seen_expressions: dict[str, list[str]] = {}
     seen_waf_rulesets: dict[str, list[str]] = {}
     seen_enforce_on_keys: dict[str, str] = {}  # ref -> key value
+    seen_refs: dict[str, int] = {}
 
     for rule in rules:
+        if not isinstance(rule, dict):
+            results.append(
+                _result(
+                    rule_id="GA004",
+                    severity=Severity.ERROR,
+                    message="Rule entry is not a dict",
+                    phase=phase,
+                )
+            )
+            continue
+
         ref = rule.get("ref", "")
         if not ref:
             results.append(
@@ -311,6 +323,20 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
                 )
             )
         ref_str = str(ref)
+
+        # GA005: duplicate ref within phase
+        if ref_str:
+            seen_refs[ref_str] = seen_refs.get(ref_str, 0) + 1
+            if seen_refs[ref_str] == 2:
+                results.append(
+                    _result(
+                        rule_id="GA005",
+                        severity=Severity.ERROR,
+                        message=f"Duplicate ref {ref_str!r} within phase",
+                        phase=phase,
+                        ref=ref_str,
+                    )
+                )
 
         _check_unknown_fields(rule, results, phase, ref_str)
         _check_priority(ref_str, results, phase, seen_priorities)
@@ -2388,6 +2414,8 @@ def _check_dead_rules(
     # Find the lowest-priority match-all rule
     match_all_pri: int | None = None
     for rule in rules:
+        if not isinstance(rule, dict):
+            continue
         ref = rule.get("ref", "")
         pri = _parse_priority(ref)
         if pri is None:
@@ -2400,6 +2428,8 @@ def _check_dead_rules(
         return
 
     for rule in rules:
+        if not isinstance(rule, dict):
+            continue
         ref = rule.get("ref", "")
         pri = _parse_priority(ref)
         if pri is None:
