@@ -10,6 +10,7 @@ settings in ``octorules_azure/_policy_settings.py``.
 """
 
 import logging
+import threading
 from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
@@ -420,14 +421,16 @@ class PolicySettingsFormatter:
 # Registration
 # ---------------------------------------------------------------------------
 _registered = False
+_register_lock = threading.Lock()
 
 
 def register_policy_settings() -> None:
     """Register all policy settings hooks with the core extension system."""
     global _registered
-    if _registered:
-        return
-    _registered = True
+    with _register_lock:
+        if _registered:
+            return
+        _registered = True
 
     from octorules.extensions import (
         register_apply_extension,
