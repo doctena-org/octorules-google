@@ -566,6 +566,7 @@ class TestValidateExtension:
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
         assert len(errors) == 1
+        assert "zone/gcloud_armor_policy_settings:" in errors[0]
         assert "recaptcha_options_config" in errors[0]
         assert "mapping" in errors[0]
 
@@ -831,46 +832,6 @@ class TestFormatReport:
         result = fmt.format_report([], zone_has_drift=False, phases_data=phases_data)
         assert result is False
         assert phases_data == []
-
-
-# ---------------------------------------------------------------------------
-# Format extension — format_plan and count_changes
-# ---------------------------------------------------------------------------
-class TestFormatPlanAndCount:
-    def test_format_plan(self):
-        fmt = PolicySettingsFormatter()
-        plan = PolicySettingsPlan(
-            changes=[PolicySettingsChange("default_rule_action", "allow", "deny(403)")]
-        )
-        lines = fmt.format_plan([plan], "my-policy")
-        assert len(lines) == 1
-        assert "my-policy" in lines[0]
-        assert "allow" in lines[0]
-        assert "deny(403)" in lines[0]
-
-    def test_count_changes(self):
-        fmt = PolicySettingsFormatter()
-        plan = PolicySettingsPlan(
-            changes=[
-                PolicySettingsChange("default_rule_action", "allow", "deny(403)"),
-                PolicySettingsChange(
-                    "ddos_protection_config",
-                    {"ddos_protection": "STANDARD"},
-                    {"ddos_protection": "STANDARD"},
-                ),  # no change
-                PolicySettingsChange(
-                    "advanced_options_config",
-                    {"json_parsing": "DISABLED"},
-                    {"json_parsing": "STANDARD"},
-                ),
-            ]
-        )
-        assert fmt.count_changes([plan]) == 2
-
-    def test_empty(self):
-        fmt = PolicySettingsFormatter()
-        assert fmt.format_plan([], "z") == []
-        assert fmt.count_changes([]) == 0
 
 
 # ---------------------------------------------------------------------------

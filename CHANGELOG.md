@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-04-10
+
+### Added
+- Automatic Cloud Armor tier detection — `resolve_zone_id` inspects
+  `ddos_protection_config` and
+  `adaptive_protection_config.layer7_ddos_defense_config.rule_visibility` to
+  classify policies as `standard`, `plus`, or `enterprise`. Detected tiers are
+  exposed via `zone_plans` and feed into the core zone plans cache for automatic
+  plan-tier-aware linting (GA501, GA502).
+
+### Fixed
+- `recaptcha_options_config` validation error message now includes the
+  `zone_name/extension_key` prefix consistent with all other validation
+  messages.
+
+### Changed
+- Policy settings and linter registration are now thread-safe
+  (`threading.Lock`).
+
+### Removed
+- Unused `format_plan` and `count_changes` methods from
+  `PolicySettingsFormatter`.
+
 ## [0.8.5] - 2026-04-09
 
 ### Changed

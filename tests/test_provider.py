@@ -43,7 +43,7 @@ class TestProperties:
         provider = CloudArmorProvider(client=mock_armor_client, project="my-proj")
         assert provider.account_name is None
 
-    def test_zone_plans_is_empty(self, mock_armor_client):
+    def test_zone_plans_empty_before_resolve(self, mock_armor_client):
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
         assert provider.zone_plans == {}
 
@@ -60,6 +60,159 @@ class TestResolveZoneId:
         provider = CloudArmorProvider(client=mock_armor_client, project="p")
         with pytest.raises(Exception, match="No security policy found"):
             provider.resolve_zone_id("missing-policy")
+
+
+class TestDetectTier:
+    """Unit tests for the _detect_tier heuristic."""
+
+    def test_no_ddos_config_is_standard(self):
+        from octorules_google.provider import _detect_tier
+
+        assert _detect_tier({}) == "standard"
+
+    def test_none_ddos_config_is_standard(self):
+        from octorules_google.provider import _detect_tier
+
+        assert _detect_tier({"ddos_protection_config": None}) == "standard"
+
+    def test_empty_ddos_config_is_standard(self):
+        from octorules_google.provider import _detect_tier
+
+        assert _detect_tier({"ddos_protection_config": {}}) == "standard"
+
+    def test_non_advanced_ddos_is_standard(self):
+        from octorules_google.provider import _detect_tier
+
+        policy = {"ddos_protection_config": {"ddos_protection": "STANDARD"}}
+        assert _detect_tier(policy) == "standard"
+
+    def test_advanced_without_premium_visibility_is_plus(self):
+        from octorules_google.provider import _detect_tier
+
+        policy = {"ddos_protection_config": {"ddos_protection": "ADVANCED"}}
+        assert _detect_tier(policy) == "plus"
+
+    def test_advanced_preview_is_plus(self):
+        from octorules_google.provider import _detect_tier
+
+        policy = {"ddos_protection_config": {"ddos_protection": "ADVANCED_PREVIEW"}}
+        assert _detect_tier(policy) == "plus"
+
+    def test_advanced_with_premium_visibility_is_enterprise(self):
+        from octorules_google.provider import _detect_tier
+
+        policy = {
+            "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+            "adaptive_protection_config": {
+                "layer7_ddos_defense_config": {"rule_visibility": "PREMIUM"},
+            },
+        }
+        assert _detect_tier(policy) == "enterprise"
+
+    def test_advanced_preview_with_premium_visibility_is_enterprise(self):
+        from octorules_google.provider import _detect_tier
+
+        policy = {
+            "ddos_protection_config": {"ddos_protection": "ADVANCED_PREVIEW"},
+            "adaptive_protection_config": {
+                "layer7_ddos_defense_config": {"rule_visibility": "PREMIUM"},
+            },
+        }
+        assert _detect_tier(policy) == "enterprise"
+
+    def test_advanced_with_non_premium_visibility_is_plus(self):
+        from octorules_google.provider import _detect_tier
+
+        policy = {
+            "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+            "adaptive_protection_config": {
+                "layer7_ddos_defense_config": {"rule_visibility": "STANDARD"},
+            },
+        }
+        assert _detect_tier(policy) == "plus"
+
+    def test_advanced_with_missing_adaptive_config_is_plus(self):
+        from octorules_google.provider import _detect_tier
+
+        policy = {
+            "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+            "adaptive_protection_config": None,
+        }
+        assert _detect_tier(policy) == "plus"
+
+    def test_advanced_with_empty_layer7_config_is_plus(self):
+        from octorules_google.provider import _detect_tier
+
+        policy = {
+            "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+            "adaptive_protection_config": {"layer7_ddos_defense_config": None},
+        }
+        assert _detect_tier(policy) == "plus"
+
+
+class TestResolveZoneIdTierDetection:
+    """Tests that resolve_zone_id populates zone_plans with detected tier."""
+
+    def test_detects_standard_tier(self, mock_armor_client):
+        mock_armor_client.get.return_value = {"name": "my-policy"}
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+        assert provider.zone_plans == {"my-policy": "standard"}
+
+    def test_detects_plus_tier(self, mock_armor_client):
+        mock_armor_client.get.return_value = {
+            "name": "my-policy",
+            "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+        }
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+        assert provider.zone_plans == {"my-policy": "plus"}
+
+    def test_detects_enterprise_tier(self, mock_armor_client):
+        mock_armor_client.get.return_value = {
+            "name": "my-policy",
+            "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+            "adaptive_protection_config": {
+                "layer7_ddos_defense_config": {"rule_visibility": "PREMIUM"},
+            },
+        }
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+        assert provider.zone_plans == {"my-policy": "enterprise"}
+
+    def test_detects_tier_missing_fields(self, mock_armor_client):
+        """Minimal response with no ddos config -> standard."""
+        mock_armor_client.get.return_value = {"name": "minimal"}
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("minimal")
+        assert provider.zone_plans == {"minimal": "standard"}
+
+    def test_zone_plans_returns_copy(self, mock_armor_client):
+        """zone_plans returns a copy, not the internal dict."""
+        mock_armor_client.get.return_value = {"name": "my-policy"}
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("my-policy")
+        plans = provider.zone_plans
+        plans["injected"] = "hacked"
+        assert "injected" not in provider.zone_plans
+
+    def test_multiple_zones_accumulated(self, mock_armor_client):
+        """Multiple resolve_zone_id calls accumulate zone plans."""
+        policies = {
+            "standard-policy": {"name": "standard-policy"},
+            "plus-policy": {
+                "name": "plus-policy",
+                "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+            },
+        }
+        mock_armor_client.get.side_effect = lambda **kw: policies[kw["security_policy"]]
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        provider.resolve_zone_id("standard-policy")
+        provider.resolve_zone_id("plus-policy")
+        assert provider.zone_plans == {
+            "standard-policy": "standard",
+            "plus-policy": "plus",
+        }
 
 
 class TestGetPhaseRules:
@@ -1264,3 +1417,166 @@ class TestNormalizationRoundTrip:
         assert denormalized["action"] == "throttle"
         rlo = denormalized.get("rate_limit_options", {})
         assert rlo["rate_limit_threshold"]["count"] == 100
+
+
+class TestGetPolicySettings:
+    """Tests for CloudArmorProvider.get_policy_settings()."""
+
+    def test_returns_normalized_settings(self, mock_armor_client):
+        """get_policy_settings returns normalized policy settings from the API."""
+        policy = {
+            "name": "my-policy",
+            "adaptive_protection_config": {"layer7_ddos_defense_config": {"enable": True}},
+            "advanced_options_config": {"json_parsing": "STANDARD"},
+            "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+            "recaptcha_options_config": {"redirect_site_key": "key-123"},
+            "rules": [
+                {
+                    "priority": 100,
+                    "action": "deny(403)",
+                    "match": {"config": {"src_ip_ranges": ["1.2.3.0/24"]}},
+                },
+                {
+                    "priority": 2147483647,
+                    "action": "deny(502)",
+                    "match": {"config": {"src_ip_ranges": ["*"]}},
+                    "description": "Default rule",
+                },
+            ],
+        }
+        mock_armor_client.get.return_value = policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        result = provider.get_policy_settings(_zs())
+        assert result["adaptive_protection_config"] == {
+            "layer7_ddos_defense_config": {"enable": True}
+        }
+        assert result["advanced_options_config"] == {"json_parsing": "STANDARD"}
+        assert result["ddos_protection_config"] == {"ddos_protection": "ADVANCED"}
+        assert result["recaptcha_options_config"] == {"redirect_site_key": "key-123"}
+        assert result["default_rule_action"] == "deny(502)"
+
+    def test_minimal_policy(self, mock_armor_client):
+        """Policy with no config fields and default allow rule."""
+        policy = {
+            "name": "bare",
+            "rules": [
+                {
+                    "priority": 2147483647,
+                    "action": "allow",
+                    "match": {"config": {"src_ip_ranges": ["*"]}},
+                },
+            ],
+        }
+        mock_armor_client.get.return_value = policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        result = provider.get_policy_settings(_zs())
+        assert result == {"default_rule_action": "allow"}
+
+    def test_no_rules_returns_empty(self, mock_armor_client):
+        """Policy with no rules returns empty settings."""
+        policy = {"name": "empty"}
+        mock_armor_client.get.return_value = policy
+        provider = CloudArmorProvider(client=mock_armor_client, project="p")
+        result = provider.get_policy_settings(_zs())
+        assert result == {}
+
+
+class TestUpdatePolicySettings:
+    """Tests for CloudArmorProvider.update_policy_settings()."""
+
+    def _make_provider(self, mock_armor_client, policy=None):
+        if policy is not None:
+            mock_armor_client.get.return_value = policy
+        return CloudArmorProvider(client=mock_armor_client, project="p")
+
+    def test_policy_level_fields_only(self, mock_armor_client):
+        """Patching only policy-level fields (no default_rule_action)."""
+        provider = self._make_provider(mock_armor_client)
+        settings = {
+            "advanced_options_config": {"json_parsing": "STANDARD"},
+            "ddos_protection_config": {"ddos_protection": "ADVANCED"},
+        }
+        provider.update_policy_settings(_zs(), settings)
+        mock_armor_client.patch.assert_called_once()
+        patch_kwargs = mock_armor_client.patch.call_args[1]
+        resource = patch_kwargs["security_policy_resource"]
+        assert resource["advanced_options_config"] == {"json_parsing": "STANDARD"}
+        assert resource["ddos_protection_config"] == {"ddos_protection": "ADVANCED"}
+        assert "rules" not in resource
+
+    @patch("octorules.retry.time.sleep")
+    def test_default_rule_action_change(self, _mock_sleep, mock_armor_client):
+        """Changing default_rule_action fetches the policy and patches the default rule."""
+        policy = {
+            "name": "my-policy",
+            "rules": [
+                {
+                    "priority": 100,
+                    "action": "deny(403)",
+                    "match": {"config": {"src_ip_ranges": ["1.2.3.0/24"]}},
+                },
+                {
+                    "priority": 2147483647,
+                    "action": "allow",
+                    "match": {"config": {"src_ip_ranges": ["*"]}},
+                    "description": "Default rule",
+                },
+            ],
+        }
+        mock_armor_client.get.return_value = policy
+        provider = self._make_provider(mock_armor_client, policy)
+        settings = {"default_rule_action": "deny(403)"}
+        provider.update_policy_settings(_zs(), settings)
+        mock_armor_client.patch.assert_called_once()
+        patch_kwargs = mock_armor_client.patch.call_args[1]
+        resource = patch_kwargs["security_policy_resource"]
+        # rules should contain both rules, with the default rule action updated
+        rules = resource["rules"]
+        assert len(rules) == 2
+        default_rules = [r for r in rules if r.get("priority") == 2147483647]
+        assert len(default_rules) == 1
+        assert default_rules[0]["action"] == "deny(403)"
+        # Non-default rule unchanged
+        non_default = [r for r in rules if r.get("priority") != 2147483647]
+        assert len(non_default) == 1
+        assert non_default[0]["action"] == "deny(403)"
+        assert non_default[0]["priority"] == 100
+
+    @patch("octorules.retry.time.sleep")
+    def test_both_policy_fields_and_default_action(self, _mock_sleep, mock_armor_client):
+        """Combined policy-level fields and default_rule_action in one call."""
+        policy = {
+            "name": "my-policy",
+            "rules": [
+                {
+                    "priority": 2147483647,
+                    "action": "allow",
+                    "match": {"config": {"src_ip_ranges": ["*"]}},
+                },
+            ],
+        }
+        mock_armor_client.get.return_value = policy
+        provider = self._make_provider(mock_armor_client, policy)
+        settings = {
+            "adaptive_protection_config": {"layer7_ddos_defense_config": {"enable": True}},
+            "default_rule_action": "deny(502)",
+        }
+        provider.update_policy_settings(_zs(), settings)
+        mock_armor_client.patch.assert_called_once()
+        patch_kwargs = mock_armor_client.patch.call_args[1]
+        resource = patch_kwargs["security_policy_resource"]
+        # Policy-level field present
+        assert resource["adaptive_protection_config"] == {
+            "layer7_ddos_defense_config": {"enable": True}
+        }
+        # Default rule action updated
+        default_rule = resource["rules"][0]
+        assert default_rule["priority"] == 2147483647
+        assert default_rule["action"] == "deny(502)"
+
+    def test_empty_settings_is_noop(self, mock_armor_client):
+        """Empty settings dict results in no API call."""
+        provider = self._make_provider(mock_armor_client)
+        provider.update_policy_settings(_zs(), {})
+        mock_armor_client.patch.assert_not_called()
+        mock_armor_client.get.assert_not_called()

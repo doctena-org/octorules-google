@@ -70,6 +70,7 @@ Safety thresholds are configured under `safety:` (framework-owned, not forwarded
 |---------|--------|-------|
 | Phase rules (4 phases) | Supported | Security policy rules |
 | Policy settings | Supported | Adaptive protection, DDoS config, default rule action |
+| Automatic tier detection | Supported | Detects `standard`, `plus`, or `enterprise` from policy config (no manual setting needed) |
 | Custom rulesets | Not supported | — |
 | Lists | Not supported | Use inline IP ranges in match config |
 | Page Shield | Not supported | — |

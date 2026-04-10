@@ -1920,9 +1920,9 @@ gcloud_armor_custom_rules:
 
 **Severity:** WARNING
 
-Google Cloud Armor standard tier limits each security policy to **10 rules** that use `matches()` (regex) in their CEL expression. This check counts regex rules across all phases in the policy and warns when the limit is exceeded.
+Google Cloud Armor standard tier limits each security policy to **10 rules** that use `matches()` (regex) in their CEL expression. This check counts regex rules across all phases in the policy and warns when the limit is exceeded. The tier is auto-detected from the policy's DDoS and adaptive protection configuration (see [GA502](#ga502--rule-count-exceeds-tier-limit) for details); this rule only fires when the detected tier is `standard`.
 
-**Triggers on:** A policy with more than 10 rules using `matches()`.
+**Triggers on:** A standard-tier policy with more than 10 rules using `matches()`.
 
 **Fix:** Reduce the number of regex rules, combine patterns, or upgrade to Cloud Armor Plus/Enterprise which has higher limits.
 
@@ -1940,7 +1940,7 @@ Cloud Armor has per-policy rule count limits that vary by tier:
 | Plus | 512 |
 | Enterprise | 1024 |
 
-This check compares the number of rules in a phase against the configured tier's limit. The tier is determined by the `plan_tier` setting (defaults to "enterprise", the most permissive).
+This check compares the number of rules in a phase against the tier's limit. The tier is auto-detected from the policy's `ddos_protection_config` and `adaptive_protection_config.layer7_ddos_defense_config.rule_visibility` during zone resolution (`standard`, `plus`, or `enterprise`). When detection isn't possible (e.g., the policy lacks these fields), the tier falls back to `enterprise` (the most permissive).
 
 **Triggers on:** A phase with more rules than the tier allows.
 

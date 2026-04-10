@@ -266,7 +266,10 @@ def _validate_policy_settings(desired, zone_name, errors, lines):
 
     rc_cfg = settings.get("recaptcha_options_config")
     if rc_cfg is not None and not isinstance(rc_cfg, dict):
-        errors.append(f"recaptcha_options_config must be a mapping, got {type(rc_cfg).__name__}")
+        errors.append(
+            f"  {zone_name}/{_EXT_KEY}: recaptcha_options_config must be a mapping,"
+            f" got {type(rc_cfg).__name__}"
+        )
 
 
 def _dump_policy_settings(scope, provider, out_dir):
@@ -290,27 +293,6 @@ def _dump_policy_settings(scope, provider, out_dir):
 # ---------------------------------------------------------------------------
 class PolicySettingsFormatter:
     """Formats policy settings diffs for plan output."""
-
-    def format_plan(self, plans: list, zone_name: str) -> list[str]:
-        lines: list[str] = []
-        for plan in plans:
-            if not isinstance(plan, PolicySettingsPlan) or not plan.has_changes:
-                continue
-            for change in plan.changes:
-                if not change.has_changes:
-                    continue
-                lines.append(
-                    f"  {zone_name}/policy_settings.{change.field}:"
-                    f" {change.current!r} -> {change.desired!r}"
-                )
-        return lines
-
-    def count_changes(self, plans: list) -> int:
-        count = 0
-        for plan in plans:
-            if isinstance(plan, PolicySettingsPlan):
-                count += sum(1 for c in plan.changes if c.has_changes)
-        return count
 
     def format_text(self, plans: list, use_color: bool) -> list[str]:
         from octorules._color import Pen
@@ -430,18 +412,18 @@ def register_policy_settings() -> None:
     with _register_lock:
         if _registered:
             return
+
+        from octorules.extensions import (
+            register_apply_extension,
+            register_dump_extension,
+            register_format_extension,
+            register_plan_zone_hook,
+            register_validate_extension,
+        )
+
+        register_plan_zone_hook(_prefetch_policy_settings, _finalize_policy_settings)
+        register_apply_extension(_EXT_KEY, _apply_policy_settings)
+        register_format_extension(_EXT_KEY, PolicySettingsFormatter())
+        register_validate_extension(_validate_policy_settings)
+        register_dump_extension(_dump_policy_settings)
         _registered = True
-
-    from octorules.extensions import (
-        register_apply_extension,
-        register_dump_extension,
-        register_format_extension,
-        register_plan_zone_hook,
-        register_validate_extension,
-    )
-
-    register_plan_zone_hook(_prefetch_policy_settings, _finalize_policy_settings)
-    register_apply_extension(_EXT_KEY, _apply_policy_settings)
-    register_format_extension(_EXT_KEY, PolicySettingsFormatter())
-    register_validate_extension(_validate_policy_settings)
-    register_dump_extension(_dump_policy_settings)

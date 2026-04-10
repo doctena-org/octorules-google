@@ -8,6 +8,7 @@ Maps octorules concepts to Cloud Armor security policies:
 
 import logging
 import os
+import threading
 
 from google.api_core.exceptions import Forbidden, GoogleAPIError, NotFound, Unauthorized
 from google.auth.exceptions import DefaultCredentialsError
@@ -95,6 +96,32 @@ def _retry_transient(fn, *, label: str, retries: int = 2):
         backoff=_RETRY_BACKOFF,
         label=label,
     )
+
+
+# ---------------------------------------------------------------------------
+# Tier detection
+# ---------------------------------------------------------------------------
+
+
+def _detect_tier(policy: dict) -> str:
+    """Detect the Cloud Armor tier from a SecurityPolicy dict.
+
+    Heuristic:
+    - No ``ddos_protection_config`` or ddos_protection is not ADVANCED/ADVANCED_PREVIEW
+      → ``"standard"``
+    - ADVANCED or ADVANCED_PREVIEW with layer7 rule_visibility ``"PREMIUM"``
+      → ``"enterprise"``
+    - ADVANCED or ADVANCED_PREVIEW otherwise → ``"plus"``
+    """
+    ddos_cfg = policy.get("ddos_protection_config") or {}
+    ddos_protection = ddos_cfg.get("ddos_protection", "")
+    if ddos_protection not in ("ADVANCED", "ADVANCED_PREVIEW"):
+        return "standard"
+    adaptive = policy.get("adaptive_protection_config") or {}
+    layer7 = adaptive.get("layer7_ddos_defense_config") or {}
+    if layer7.get("rule_visibility") == "PREMIUM":
+        return "enterprise"
+    return "plus"
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +243,8 @@ class CloudArmorProvider:
             )
         self._max_workers = max_workers
         self._timeout = timeout if timeout is not None else 30.0
+        self._zone_plans: dict[str, str] = {}
+        self._lock = threading.Lock()
 
     # -- Properties --
 
@@ -236,8 +265,8 @@ class CloudArmorProvider:
 
     @property
     def zone_plans(self) -> dict[str, str]:
-        """Return empty dict; Cloud Armor has no zone plan tiers."""
-        return {}
+        """Zone tiers detected from policy properties."""
+        return dict(self._zone_plans)
 
     # -- Helpers --
 
@@ -330,17 +359,22 @@ class CloudArmorProvider:
     def resolve_zone_id(self, zone_name: str) -> str:
         """Resolve a security policy name to itself (Cloud Armor uses names).
 
-        Verifies the policy exists. Raises ConfigError if not found.
+        Verifies the policy exists and detects the Cloud Armor tier.
+        Raises ConfigError if not found.
         """
         try:
-            self._client.get(
+            response = self._client.get(
                 project=self._project,
                 security_policy=zone_name,
                 timeout=self._timeout,
             )
         except NotFound:
             raise ConfigError(f"No security policy found for {zone_name!r}") from None
-        log.debug("Resolved %s -> %s", zone_name, zone_name)
+        policy = to_plain_dict(response)
+        tier = _detect_tier(policy)
+        with self._lock:
+            self._zone_plans[zone_name] = tier
+        log.debug("Resolved %s -> %s (tier=%s)", zone_name, zone_name, tier)
         return zone_name
 
     @_wrap_provider_errors
