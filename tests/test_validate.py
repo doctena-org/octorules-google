@@ -505,6 +505,52 @@ class TestCidrChecks:
         match = {"config": {"src_ip_ranges": ["fd00::/8"]}, "versioned_expr": "SRC_IPS_V1"}
         assert "GA503" in _ids(validate_rules([_rule(match=match)]))
 
+    def test_ga503_cgnat(self):
+        """CGNAT range (100.64.0.0/10) should be flagged as reserved."""
+        match = {"config": {"src_ip_ranges": ["100.64.1.0/24"]}, "versioned_expr": "SRC_IPS_V1"}
+        results = validate_rules([_rule(match=match)])
+        assert "GA503" in _ids(results)
+        ga503 = [r for r in results if r.rule_id == "GA503"]
+        assert "CGNAT" in ga503[0].message
+
+    def test_ga503_documentation_rfc5737(self):
+        """RFC 5737 documentation addresses should be flagged."""
+        match = {
+            "config": {"src_ip_ranges": ["192.0.2.0/24"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        results = validate_rules([_rule(match=match)])
+        assert "GA503" in _ids(results)
+        ga503 = [r for r in results if r.rule_id == "GA503"]
+        assert "documentation" in ga503[0].message
+
+    def test_ga503_benchmark_testing(self):
+        """RFC 2544 benchmark testing addresses should be flagged."""
+        match = {
+            "config": {"src_ip_ranges": ["198.18.0.0/15"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga503_ipv6_documentation(self):
+        """IPv6 documentation prefix (2001:db8::/32) should be flagged."""
+        match = {
+            "config": {"src_ip_ranges": ["2001:db8::/32"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        results = validate_rules([_rule(match=match)])
+        assert "GA503" in _ids(results)
+        ga503 = [r for r in results if r.rule_id == "GA503"]
+        assert "documentation" in ga503[0].message
+
+    def test_ga503_multicast(self):
+        """Multicast range (224.0.0.0/4) should be flagged."""
+        match = {
+            "config": {"src_ip_ranges": ["224.0.0.0/4"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+
     # --- GA307: CIDR host bits normalization warning ---
 
     def test_ga307_host_bits_set(self):
@@ -2209,6 +2255,22 @@ class TestGA416:
         match = {"expr": {"expression": expr}}
         assert "GA416" in _ids(validate_rules([_rule(match=match)]))
 
+    def test_ga416_sensitivity_with_nested_dict(self):
+        expr = (
+            "evaluatePreconfiguredWaf('sqli-v33-stable',"
+            " {'sensitivity': 5, 'opt_out_rule_ids': ['rule1']})"
+        )
+        match = {"expr": {"expression": expr}}
+        assert "GA416" in _ids(validate_rules([_rule(match=match)]))
+
+    def test_ga416_sensitivity_with_nested_dict_valid(self):
+        expr = (
+            "evaluatePreconfiguredWaf('sqli-v33-stable',"
+            " {'sensitivity': 3, 'opt_out_rule_ids': ['rule1']})"
+        )
+        match = {"expr": {"expression": expr}}
+        assert "GA416" not in _ids(validate_rules([_rule(match=match)]))
+
 
 # ---------------------------------------------------------------------------
 # GA418  Invalid header name in CEL bracket access
@@ -2444,6 +2506,18 @@ class TestGA317:
 
     def test_ga320_ipv6_ula(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, 'fd00::/8')"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA320" in _ids(results)
+
+    def test_ga320_cgnat(self):
+        """CGNAT range should be flagged in inIpRange expressions."""
+        match = {"expr": {"expression": "inIpRange(origin.ip, '100.64.1.1/32')"}}
+        results = validate_rules([_rule(match=match)])
+        assert "GA320" in _ids(results)
+
+    def test_ga320_documentation_rfc5737(self):
+        """RFC 5737 documentation range should be flagged."""
+        match = {"expr": {"expression": "inIpRange(origin.ip, '198.51.100.0/24')"}}
         results = validate_rules([_rule(match=match)])
         assert "GA320" in _ids(results)
 

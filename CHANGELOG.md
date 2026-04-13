@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.1] - 2026-04-13
+
+### Fixed
+- GA416: Sensitivity regex now handles nested option dicts (e.g.
+  `opt_out_rule_ids` arrays) via brace-counting instead of `[^}]*?`.
+
+### Changed
+- GA303, GA411: Valid options moved to `suggestion` field.
+- Reserved IP list expanded from 8 to 28 networks (adds CGNAT, documentation,
+  benchmark, multicast, IPv6 ranges).
+- Explicit `RULE_IDS` per validator module for dead-rule detection.
+
 ## [0.9.0] - 2026-04-10
 
 ### Added

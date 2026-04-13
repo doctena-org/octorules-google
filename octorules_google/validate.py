@@ -8,6 +8,89 @@ import urllib.parse
 import celpy
 from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
 
+# Rule IDs emitted by validate_rules() — kept in sync with _rules.py by
+# test_plugin_rule_ids_match_metas.
+RULE_IDS: frozenset[str] = frozenset(
+    {
+        "GA001",
+        "GA002",
+        "GA003",
+        "GA004",
+        "GA005",
+        "GA020",
+        "GA100",
+        "GA101",
+        "GA102",
+        "GA103",
+        "GA104",
+        "GA105",
+        "GA108",
+        "GA200",
+        "GA201",
+        "GA300",
+        "GA301",
+        "GA302",
+        "GA303",
+        "GA304",
+        "GA305",
+        "GA306",
+        "GA307",
+        "GA310",
+        "GA311",
+        "GA312",
+        "GA313",
+        "GA314",
+        "GA315",
+        "GA316",
+        "GA317",
+        "GA318",
+        "GA319",
+        "GA320",
+        "GA325",
+        "GA326",
+        "GA327",
+        "GA400",
+        "GA401",
+        "GA402",
+        "GA403",
+        "GA404",
+        "GA405",
+        "GA406",
+        "GA407",
+        "GA409",
+        "GA410",
+        "GA411",
+        "GA412",
+        "GA413",
+        "GA414",
+        "GA415",
+        "GA416",
+        "GA418",
+        "GA419",
+        "GA420",
+        "GA421",
+        "GA422",
+        "GA423",
+        "GA424",
+        "GA425",
+        "GA426",
+        "GA427",
+        "GA428",
+        "GA429",
+        "GA430",
+        "GA431",
+        "GA432",
+        "GA433",
+        "GA500",
+        "GA501",
+        "GA502",
+        "GA503",
+        "GA600",
+        "GA601",
+        "GA602",
+    }
+)
+
 # Reusable CEL environment — stateless, safe to share across calls.
 _CEL_ENV = celpy.Environment()
 
@@ -193,12 +276,33 @@ _MAX_ENFORCE_ON_KEY_CONFIGS = 3
 _MATCHES_RE = re.compile(r"""matches\(\s*(?:"([^"]+)"|'([^']+)')\s*\)""")
 
 # GA416: sensitivity level in evaluatePreconfiguredWaf/Expr calls.
-# The sensitivity key may appear at any position within the options dict,
-# so we allow arbitrary content before the "sensitivity" key.
-_SENSITIVITY_RE = re.compile(
-    r"""evaluatePreconfigured(?:Waf|Expr)\(\s*["'][^"']+["']\s*,"""
-    r"""\s*\{[^}]*?["']sensitivity["']\s*:\s*(\d+)[^}]*\}\s*\)"""
+# Regex finds the call start; _extract_sensitivity() then counts braces
+# to locate the options dict boundary (handles nested dicts and arrays).
+_PRECONFIGURED_CALL_RE = re.compile(
+    r"""evaluatePreconfigured(?:Waf|Expr)\(\s*["'][^"']+["']\s*,\s*\{"""
 )
+_SENSITIVITY_KV_RE = re.compile(r"""["']sensitivity["']\s*:\s*(\d+)""")
+
+
+def _extract_sensitivity(expr: str, start: int) -> int | None:
+    """Extract sensitivity value from options dict starting at *start* (the ``{``).
+
+    Counts braces to find the matching ``}`` so nested dicts/arrays are handled.
+    """
+    depth = 0
+    for i in range(start, len(expr)):
+        ch = expr[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                # Found matching brace — search for sensitivity within
+                body = expr[start : i + 1]
+                m = _SENSITIVITY_KV_RE.search(body)
+                return int(m.group(1)) if m else None
+    return None
+
 
 # GA418: header names in request.headers["..."] bracket access
 _HEADER_BRACKET_RE = re.compile(r"""request\.headers\[\s*["']([^"']+)["']\s*\]""")
@@ -277,17 +381,39 @@ _VALID_INTERVALS = frozenset(
     }
 )
 
-# RFC 1918 / RFC 4193 / loopback / link-local — flagged as likely mistakes in
-# Cloud Armor src_ip_ranges.
-_PRIVATE_SUPERNETS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("fc00::/7"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fe80::/10"),
+# Reserved/bogon networks (RFC 1918, loopback, link-local, etc.) — flagged as
+# likely mistakes in Cloud Armor src_ip_ranges.
+_PRIVATE_SUPERNETS: list[tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, str]] = [
+    # IPv4
+    (ipaddress.ip_network("10.0.0.0/8"), "RFC 1918 private"),
+    (ipaddress.ip_network("172.16.0.0/12"), "RFC 1918 private"),
+    (ipaddress.ip_network("192.168.0.0/16"), "RFC 1918 private"),
+    (ipaddress.ip_network("127.0.0.0/8"), "loopback"),
+    (ipaddress.ip_network("169.254.0.0/16"), "link-local"),
+    (ipaddress.ip_network("100.64.0.0/10"), "CGNAT (RFC 6598)"),
+    (ipaddress.ip_network("0.0.0.0/8"), "this network"),
+    (ipaddress.ip_network("192.0.2.0/24"), "documentation (RFC 5737)"),
+    (ipaddress.ip_network("198.51.100.0/24"), "documentation (RFC 5737)"),
+    (ipaddress.ip_network("203.0.113.0/24"), "documentation (RFC 5737)"),
+    (ipaddress.ip_network("192.0.0.0/24"), "IANA special purpose"),
+    (ipaddress.ip_network("192.88.99.0/24"), "6to4 relay anycast"),
+    (ipaddress.ip_network("198.18.0.0/15"), "benchmark testing (RFC 2544)"),
+    (ipaddress.ip_network("224.0.0.0/4"), "multicast"),
+    (ipaddress.ip_network("240.0.0.0/4"), "reserved for future use"),
+    # IPv6
+    (ipaddress.ip_network("::/128"), "unspecified"),
+    (ipaddress.ip_network("::1/128"), "loopback"),
+    (ipaddress.ip_network("::ffff:0:0/96"), "IPv4-mapped"),
+    (ipaddress.ip_network("64:ff9b::/96"), "NAT64 (RFC 6052)"),
+    (ipaddress.ip_network("100::/64"), "discard (RFC 6666)"),
+    (ipaddress.ip_network("2001:db8::/32"), "documentation (RFC 3849)"),
+    (ipaddress.ip_network("2001::/23"), "IANA special purpose"),
+    (ipaddress.ip_network("2001::/32"), "Teredo"),
+    (ipaddress.ip_network("2002::/16"), "6to4"),
+    (ipaddress.ip_network("fc00::/7"), "unique local"),
+    (ipaddress.ip_network("fe80::/10"), "link-local"),
+    (ipaddress.ip_network("ff00::/8"), "multicast"),
+    (ipaddress.ip_network("::ffff:0:0:0/96"), "IPv4-translated"),
 ]
 
 
@@ -817,13 +943,13 @@ def _check_cidrs(
             )
 
         # GA503: private/reserved range
-        for private in _PRIVATE_SUPERNETS:
+        for private, desc in _PRIVATE_SUPERNETS:
             if net.version == private.version and net.subnet_of(private):
                 results.append(
                     _result(
                         rule_id="GA503",
                         severity=Severity.WARNING,
-                        message=f"Private/reserved IP range: {cidr}",
+                        message=f"Private/reserved IP range: {cidr} ({desc})",
                         phase=phase,
                         ref=ref,
                         field="match.config.src_ip_ranges",
@@ -911,6 +1037,7 @@ def _check_preconfigured(
                     phase=phase,
                     ref=ref,
                     field="match.expr.expression",
+                    suggestion=f"Known prefixes: {sorted(_KNOWN_WAF_RULE_SETS)}",
                 )
             )
 
@@ -1145,9 +1272,11 @@ def _check_cel_sensitivity(
     ref: str,
 ) -> None:
     """GA416: preconfigured WAF sensitivity level must be 0-4."""
-    for m in _SENSITIVITY_RE.finditer(expr):
-        level = int(m.group(1))
-        if level < 0 or level > 4:
+    for m in _PRECONFIGURED_CALL_RE.finditer(expr):
+        # m.end() points just past the opening '{' of the options dict
+        brace_start = m.end() - 1
+        level = _extract_sensitivity(expr, brace_start)
+        if level is not None and (level < 0 or level > 4):
             results.append(
                 _result(
                     rule_id="GA416",
@@ -1314,13 +1443,13 @@ def _check_cel_iniprange_cidr(
             continue
 
         # GA320: check for private/reserved ranges
-        for private in _PRIVATE_SUPERNETS:
+        for private, desc in _PRIVATE_SUPERNETS:
             if net.version == private.version and net.subnet_of(private):
                 results.append(
                     _result(
                         rule_id="GA320",
                         severity=Severity.WARNING,
-                        message=(f"Private/reserved IP range in inIpRange(): {cidr!r}"),
+                        message=f"Private/reserved IP range in inIpRange(): {cidr!r} ({desc})",
                         phase=phase,
                         ref=ref,
                         field="match.expr.expression",
@@ -1835,12 +1964,11 @@ def _check_exceed_redirect_options(
             _result(
                 rule_id="GA411",
                 severity=Severity.ERROR,
-                message=(
-                    f"exceed_redirect_options.type must be one of: {sorted(_VALID_REDIRECT_TYPES)}"
-                ),
+                message=f"Invalid exceed_redirect_options.type: {ero_type!r}",
                 phase=phase,
                 ref=ref,
                 field="rate_limit_options.exceed_redirect_options.type",
+                suggestion=f"Valid: {sorted(_VALID_REDIRECT_TYPES)}",
             )
         )
 

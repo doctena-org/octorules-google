@@ -6,7 +6,7 @@ from octorules.linter.engine import LintContext, LintResult, Severity
 from octorules.phases import PHASE_BY_NAME
 
 from octorules_google import GCLOUD_PHASE_NAMES
-from octorules_google.linter._rules import GA_RULE_METAS
+from octorules_google.validate import RULE_IDS as _validate_ids
 from octorules_google.validate import (
     validate_regex_rule_count,
     validate_rule_count,
@@ -16,7 +16,14 @@ from octorules_google.validate import (
 # Re-export for backward compatibility
 _GCLOUD_PHASE_NAMES = GCLOUD_PHASE_NAMES
 
-GA_RULE_IDS: frozenset[str] = frozenset(r.rule_id for r in GA_RULE_METAS)
+# Rule IDs emitted by cross-phase checks in this module.
+_PLUGIN_RULE_IDS: frozenset[str] = frozenset(
+    {
+        "GA006",
+    }
+)
+
+GA_RULE_IDS: frozenset[str] = _validate_ids | _PLUGIN_RULE_IDS
 
 
 def google_lint(rules_data: dict[str, Any], ctx: LintContext) -> None:
