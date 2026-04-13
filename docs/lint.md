@@ -61,7 +61,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA100](#ga100--invalid-priority-must-be-non-negative-integer) | Invalid priority (must be non-negative integer) | ERROR |
 | [GA101](#ga101--priority-out-of-range-0-2147483646) | Priority out of range (0-2147483646) | ERROR |
 | [GA102](#ga102--duplicate-priority) | Duplicate priority | ERROR |
-| [GA103](#ga103--unreachable-rule-after-match-all) | Unreachable rule after match-all (incl. `((true))`, `SRC_IPS_V1` with `["*"]`) | WARNING |
+| [GA103](#ga103--unreachable-rule-after-match-all) | Unreachable rule after match-all | WARNING |
 | [GA104](#ga104--duplicate-cel-expression-across-rules) | Duplicate CEL expression across rules | WARNING |
 | [GA105](#ga105--inconsistent-enforce_on_key-across-rate-limit-rules) | Inconsistent enforce_on_key across rate-limit rules | WARNING |
 | [GA108](#ga108--duplicate-preconfigured-waf-rule-set-across-rules) | Duplicate preconfigured WAF rule set across rules | WARNING |
@@ -74,7 +74,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA304](#ga304--cel-expression-exceeds-2048-character-limit) | CEL expression exceeds 2048 character limit | WARNING |
 | [GA305](#ga305--overlapping-or-duplicate-cidrs) | Overlapping or duplicate CIDRs | WARNING |
 | [GA306](#ga306--0-cidr-matches-all-traffic) | /0 CIDR matches all traffic | WARNING |
-| [GA307](#ga307--cidr-host-bits-normalization) | CIDR host bits normalization | WARNING |
+| [GA307](#ga307--cidr-host-bits-normalization) | CIDR has host bits set (will be normalized) | WARNING |
 | [GA310](#ga310--unknown-field-reference-in-cel-expression) | Unknown field reference in CEL expression | WARNING |
 | [GA311](#ga311--unknown-function-in-cel-expression) | Unknown function in CEL expression | WARNING |
 | [GA312](#ga312--invalid-versioned_expr-value) | Invalid versioned_expr value | ERROR |
@@ -86,9 +86,9 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA318](#ga318--cel-type-mismatch) | CEL type mismatch | WARNING |
 | [GA319](#ga319--case-sensitive-string-comparison) | Case-sensitive string comparison may need case-insensitive matching | INFO |
 | [GA320](#ga320--privatereserved-ip-range-in-iniprange) | Private/reserved IP range in inIpRange() | WARNING |
-| [GA325](#ga325--invalid-header_action-sub-structure) | Invalid header_action sub-structure | ERROR |
-| [GA326](#ga326--network_match-must-be-a-dict) | network_match must be a dict | ERROR |
-| [GA327](#ga327--invalid-preconfigured_waf_config-exclusions) | Invalid preconfigured_waf_config exclusions | ERROR |
+| [GA325](#ga325--invalid-header_action-sub-structure) | Invalid header_action structure | ERROR |
+| [GA326](#ga326--network_match-must-be-a-dict) | Invalid network_match structure | ERROR |
+| [GA327](#ga327--invalid-preconfigured_waf_config-exclusions) | Invalid preconfigured_waf_config structure | ERROR |
 | [GA400](#ga400--rate-limit-action-requires-rate_limit_options) | Rate-limit action requires 'rate_limit_options' | ERROR |
 | [GA401](#ga401--redirect-action-requires-redirect_options) | Redirect action requires 'redirect_options' | ERROR |
 | [GA402](#ga402--invalid-redirect-type) | Invalid redirect type | ERROR |
@@ -109,7 +109,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA418](#ga418--invalid-http-header-name-in-cel-expression) | Invalid HTTP header name in CEL expression | WARNING |
 | [GA419](#ga419--redirect-target-must-not-be-empty) | Redirect target must not be empty | ERROR |
 | [GA420](#ga420--rate_limit_threshold-missing-required-subfields) | rate_limit_threshold missing required subfields | ERROR |
-| [GA421](#ga421--invalid-type-for-rate-limit-field) | Invalid type for rate limit field + count-range validation | ERROR |
+| [GA421](#ga421--invalid-type-for-rate-limit-field) | Invalid type for rate limit field | ERROR |
 | [GA422](#ga422--enforce_on_key-required-for-rate_based_ban-with-redirect-exceed_action) | enforce_on_key required for rate_based_ban with redirect exceed_action | WARNING |
 | [GA423](#ga423--invalid-enforce_on_key-value) | Invalid enforce_on_key value | ERROR |
 | [GA424](#ga424--enforce_on_key_name-required-for-http_headerhttp_cookie) | enforce_on_key_name required for HTTP_HEADER/HTTP_COOKIE | ERROR |
@@ -126,8 +126,8 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA502](#ga502--rule-count-exceeds-tier-limit) | Rule count exceeds tier limit | WARNING |
 | [GA503](#ga503--privatereserved-ip-range-in-src_ip_ranges) | Private/reserved IP range in src_ip_ranges | WARNING |
 | [GA600](#ga600--rule-is-in-preview-mode) | Rule is in preview mode (preview: true) | INFO |
-| [GA601](#ga601--expression-is-always-true) | Expression is always true — catch-all rule | WARNING |
-| [GA602](#ga602--expression-is-always-false) | Expression is always false — dead rule | WARNING |
+| [GA601](#ga601--expression-is-always-true) | Expression is always true — this is a catch-all rule | WARNING |
+| [GA602](#ga602--expression-is-always-false) | Expression is always false — rule never matches | WARNING |
 
 ---
 
