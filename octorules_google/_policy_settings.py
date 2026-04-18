@@ -10,8 +10,9 @@ settings in ``octorules_azure/_policy_settings.py``.
 """
 
 import logging
-import threading
 from dataclasses import dataclass, field
+
+from octorules.registration import idempotent_registration
 
 log = logging.getLogger(__name__)
 
@@ -402,28 +403,19 @@ class PolicySettingsFormatter:
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
-_registered = False
-_register_lock = threading.Lock()
-
-
+@idempotent_registration
 def register_policy_settings() -> None:
     """Register all policy settings hooks with the core extension system."""
-    global _registered
-    with _register_lock:
-        if _registered:
-            return
+    from octorules.extensions import (
+        register_apply_extension,
+        register_dump_extension,
+        register_format_extension,
+        register_plan_zone_hook,
+        register_validate_extension,
+    )
 
-        from octorules.extensions import (
-            register_apply_extension,
-            register_dump_extension,
-            register_format_extension,
-            register_plan_zone_hook,
-            register_validate_extension,
-        )
-
-        register_plan_zone_hook(_prefetch_policy_settings, _finalize_policy_settings)
-        register_apply_extension(_EXT_KEY, _apply_policy_settings)
-        register_format_extension(_EXT_KEY, PolicySettingsFormatter())
-        register_validate_extension(_validate_policy_settings)
-        register_dump_extension(_dump_policy_settings)
-        _registered = True
+    register_plan_zone_hook(_prefetch_policy_settings, _finalize_policy_settings)
+    register_apply_extension(_EXT_KEY, _apply_policy_settings)
+    register_format_extension(_EXT_KEY, PolicySettingsFormatter())
+    register_validate_extension(_validate_policy_settings)
+    register_dump_extension(_dump_policy_settings)

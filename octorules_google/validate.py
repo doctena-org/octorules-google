@@ -7,6 +7,7 @@ import urllib.parse
 
 import celpy
 from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
+from octorules.reserved_ips import is_reserved
 
 # Rule IDs emitted by validate_rules() — kept in sync with _rules.py by
 # test_plugin_rule_ids_match_metas.
@@ -381,40 +382,8 @@ _VALID_INTERVALS = frozenset(
     }
 )
 
-# Reserved/bogon networks (RFC 1918, loopback, link-local, etc.) — flagged as
-# likely mistakes in Cloud Armor src_ip_ranges.
-_PRIVATE_SUPERNETS: list[tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, str]] = [
-    # IPv4
-    (ipaddress.ip_network("10.0.0.0/8"), "RFC 1918 private"),
-    (ipaddress.ip_network("172.16.0.0/12"), "RFC 1918 private"),
-    (ipaddress.ip_network("192.168.0.0/16"), "RFC 1918 private"),
-    (ipaddress.ip_network("127.0.0.0/8"), "loopback"),
-    (ipaddress.ip_network("169.254.0.0/16"), "link-local"),
-    (ipaddress.ip_network("100.64.0.0/10"), "CGNAT (RFC 6598)"),
-    (ipaddress.ip_network("0.0.0.0/8"), "this network"),
-    (ipaddress.ip_network("192.0.2.0/24"), "documentation (RFC 5737)"),
-    (ipaddress.ip_network("198.51.100.0/24"), "documentation (RFC 5737)"),
-    (ipaddress.ip_network("203.0.113.0/24"), "documentation (RFC 5737)"),
-    (ipaddress.ip_network("192.0.0.0/24"), "IANA special purpose"),
-    (ipaddress.ip_network("192.88.99.0/24"), "6to4 relay anycast"),
-    (ipaddress.ip_network("198.18.0.0/15"), "benchmark testing (RFC 2544)"),
-    (ipaddress.ip_network("224.0.0.0/4"), "multicast"),
-    (ipaddress.ip_network("240.0.0.0/4"), "reserved for future use"),
-    # IPv6
-    (ipaddress.ip_network("::/128"), "unspecified"),
-    (ipaddress.ip_network("::1/128"), "loopback"),
-    (ipaddress.ip_network("::ffff:0:0/96"), "IPv4-mapped"),
-    (ipaddress.ip_network("64:ff9b::/96"), "NAT64 (RFC 6052)"),
-    (ipaddress.ip_network("100::/64"), "discard (RFC 6666)"),
-    (ipaddress.ip_network("2001:db8::/32"), "documentation (RFC 3849)"),
-    (ipaddress.ip_network("2001::/23"), "IANA special purpose"),
-    (ipaddress.ip_network("2001::/32"), "Teredo"),
-    (ipaddress.ip_network("2002::/16"), "6to4"),
-    (ipaddress.ip_network("fc00::/7"), "unique local"),
-    (ipaddress.ip_network("fe80::/10"), "link-local"),
-    (ipaddress.ip_network("ff00::/8"), "multicast"),
-    (ipaddress.ip_network("::ffff:0:0:0/96"), "IPv4-translated"),
-]
+# Reserved/bogon network detection is provided by octorules.reserved_ips
+# (single source of truth across providers; see core v0.26.0).
 
 
 def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
@@ -943,19 +912,18 @@ def _check_cidrs(
             )
 
         # GA503: private/reserved range
-        for private, desc in _PRIVATE_SUPERNETS:
-            if net.version == private.version and net.subnet_of(private):
-                results.append(
-                    _result(
-                        rule_id="GA503",
-                        severity=Severity.WARNING,
-                        message=f"Private/reserved IP range: {cidr} ({desc})",
-                        phase=phase,
-                        ref=ref,
-                        field="match.config.src_ip_ranges",
-                    )
+        desc = is_reserved(cidr)
+        if desc is not None:
+            results.append(
+                _result(
+                    rule_id="GA503",
+                    severity=Severity.WARNING,
+                    message=f"Private/reserved IP range: {cidr} ({desc})",
+                    phase=phase,
+                    ref=ref,
+                    field="match.config.src_ip_ranges",
                 )
-                break
+            )
 
     # GA305: overlapping CIDRs
     for i, (cidr_a, net_a) in enumerate(networks):
@@ -1428,7 +1396,7 @@ def _check_cel_iniprange_cidr(
     for m in _IN_IP_RANGE_RE.finditer(expr):
         cidr = m.group(1)
         try:
-            net = ipaddress.ip_network(cidr, strict=False)
+            ipaddress.ip_network(cidr, strict=False)
         except ValueError as exc:
             results.append(
                 _result(
@@ -1443,19 +1411,18 @@ def _check_cel_iniprange_cidr(
             continue
 
         # GA320: check for private/reserved ranges
-        for private, desc in _PRIVATE_SUPERNETS:
-            if net.version == private.version and net.subnet_of(private):
-                results.append(
-                    _result(
-                        rule_id="GA320",
-                        severity=Severity.WARNING,
-                        message=f"Private/reserved IP range in inIpRange(): {cidr!r} ({desc})",
-                        phase=phase,
-                        ref=ref,
-                        field="match.expr.expression",
-                    )
+        desc = is_reserved(cidr)
+        if desc is not None:
+            results.append(
+                _result(
+                    rule_id="GA320",
+                    severity=Severity.WARNING,
+                    message=f"Private/reserved IP range in inIpRange(): {cidr!r} ({desc})",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
                 )
-                break
+            )
 
 
 def _check_cel_type_mismatch(
