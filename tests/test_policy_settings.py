@@ -4,8 +4,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from google.api_core.exceptions import ServiceUnavailable
+from google.cloud.compute_v1 import SecurityPoliciesClient
 from octorules.provider.base import Scope
 
+from octorules_google import CloudArmorProvider
 from octorules_google._policy_settings import (
     PolicySettingsChange,
     PolicySettingsFormatter,
@@ -325,7 +327,7 @@ class TestPrefetchHook:
         assert result is None
 
     def test_fetches_settings(self):
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.return_value = {
             "default_rule_action": "allow",
             "ddos_protection_config": {"ddos_protection": "STANDARD"},
@@ -340,7 +342,7 @@ class TestPrefetchHook:
     def test_api_failure_handled_gracefully(self):
         from octorules.provider.exceptions import ProviderError
 
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.side_effect = ProviderError("API down")
         all_desired = {"gcloud_armor_policy_settings": {"default_rule_action": "deny(403)"}}
         result = _prefetch_policy_settings(all_desired, _scope(), provider)
@@ -350,7 +352,7 @@ class TestPrefetchHook:
     def test_auth_error_propagates(self):
         from octorules.provider.exceptions import ProviderAuthError
 
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.side_effect = ProviderAuthError("forbidden")
         all_desired = {"gcloud_armor_policy_settings": {"default_rule_action": "deny(403)"}}
         with pytest.raises(ProviderAuthError):
@@ -397,7 +399,7 @@ class TestFinalizeHook:
 # ---------------------------------------------------------------------------
 class TestApplyHook:
     def test_apply_changes(self):
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         zp = MagicMock()
         plan = PolicySettingsPlan(
             changes=[
@@ -419,7 +421,7 @@ class TestApplyHook:
         assert payload["ddos_protection_config"] == {"ddos_protection": "ADVANCED"}
 
     def test_no_changes_skipped(self):
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         zp = MagicMock()
         plan = PolicySettingsPlan(
             changes=[PolicySettingsChange("default_rule_action", "allow", "allow")]
@@ -586,7 +588,7 @@ class TestValidateExtension:
 # ---------------------------------------------------------------------------
 class TestDumpExtension:
     def test_dump_returns_settings(self):
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.return_value = {
             "default_rule_action": "allow",
             "ddos_protection_config": {"ddos_protection": "STANDARD"},
@@ -598,13 +600,13 @@ class TestDumpExtension:
     def test_dump_api_failure(self):
         from octorules.provider.exceptions import ProviderError
 
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.side_effect = ProviderError("down")
         result = _dump_policy_settings(_scope(), provider, None)
         assert result is None
 
     def test_dump_empty_settings(self):
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.return_value = {}
         result = _dump_policy_settings(_scope(), provider, None)
         assert result is None
@@ -612,7 +614,7 @@ class TestDumpExtension:
     def test_dump_auth_error_propagates(self):
         from octorules.provider.exceptions import ProviderAuthError
 
-        provider = MagicMock()
+        provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.side_effect = ProviderAuthError("forbidden")
         with pytest.raises(ProviderAuthError):
             _dump_policy_settings(_scope(), provider, None)
@@ -850,7 +852,7 @@ class TestProviderGetPolicySettings:
                 {"priority": 2147483647, "action": "allow"},
             ],
         }
-        client = MagicMock()
+        client = MagicMock(spec=SecurityPoliciesClient)
         client.get.return_value = policy_dict
         provider = CloudArmorProvider(client=client, project="test-project")
         scope = _scope()
@@ -865,7 +867,7 @@ class TestProviderGetPolicySettings:
     def test_get_policy_settings_empty(self):
         from octorules_google import CloudArmorProvider
 
-        client = MagicMock()
+        client = MagicMock(spec=SecurityPoliciesClient)
         client.get.return_value = {"name": "empty-policy", "rules": []}
         provider = CloudArmorProvider(client=client, project="test-project")
         result = provider.get_policy_settings(_scope())
@@ -876,7 +878,7 @@ class TestProviderUpdatePolicySettings:
     def test_update_policy_fields_only(self):
         from octorules_google import CloudArmorProvider
 
-        client = MagicMock()
+        client = MagicMock(spec=SecurityPoliciesClient)
         # _get_policy is not called when there's no default_rule_action
         provider = CloudArmorProvider(client=client, project="test-project")
         provider.update_policy_settings(
@@ -901,7 +903,7 @@ class TestProviderUpdatePolicySettings:
                 {"priority": 2147483647, "action": "allow"},
             ],
         }
-        client = MagicMock()
+        client = MagicMock(spec=SecurityPoliciesClient)
         client.get.return_value = policy_dict
         provider = CloudArmorProvider(client=client, project="test-project")
         provider.update_policy_settings(
@@ -928,7 +930,7 @@ class TestProviderUpdatePolicySettings:
                 {"priority": 2147483647, "action": "allow"},
             ],
         }
-        client = MagicMock()
+        client = MagicMock(spec=SecurityPoliciesClient)
         client.get.return_value = policy_dict
         provider = CloudArmorProvider(client=client, project="test-project")
         provider.update_policy_settings(
@@ -949,7 +951,7 @@ class TestProviderUpdatePolicySettings:
     def test_update_empty_settings_is_noop(self):
         from octorules_google import CloudArmorProvider
 
-        client = MagicMock()
+        client = MagicMock(spec=SecurityPoliciesClient)
         provider = CloudArmorProvider(client=client, project="test-project")
         provider.update_policy_settings(_scope(), {})
         client.patch.assert_not_called()
@@ -964,7 +966,7 @@ class TestProviderUpdatePolicySettings:
                 {"priority": 2147483647, "action": "allow"},
             ],
         }
-        client = MagicMock()
+        client = MagicMock(spec=SecurityPoliciesClient)
         client.get.side_effect = [
             ServiceUnavailable("503"),
             policy_dict,
