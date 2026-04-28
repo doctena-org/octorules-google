@@ -89,6 +89,7 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA600",
         "GA601",
         "GA602",
+        "GA603",
     }
 )
 
@@ -139,6 +140,7 @@ _VALID_RULE_FIELDS = frozenset(
         "match",
         "description",
         "preview",
+        "enabled",
         "header_action",
         "rate_limit_options",
         "redirect_options",
@@ -444,6 +446,7 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
         _check_network_match(rule, results, phase, ref_str)
         _check_preconfigured_waf_config(rule, results, phase, ref_str)
         _check_preview(rule, results, phase, ref_str)
+        _check_enabled(rule, results, phase, ref_str)
         _check_always_true_false(rule, results, phase, ref_str)
 
     _check_duplicate_priorities(seen_priorities, results, phase)
@@ -925,18 +928,44 @@ def _check_cidrs(
                 )
             )
 
-    # GA305: overlapping CIDRs
-    for i, (cidr_a, net_a) in enumerate(networks):
-        for cidr_b, net_b in networks[i + 1 :]:
-            if net_a.version != net_b.version:
-                continue
-            if net_a.overlaps(net_b):
-                if net_a == net_b:
-                    msg = f"Duplicate CIDR: {cidr_a}"
-                elif net_b.subnet_of(net_a):
-                    msg = f"Redundant: {cidr_b} contained in {cidr_a}"
+    # GA305: overlapping/duplicate CIDRs — sweep-line O(n log n).
+    # Catch-all entries (0.0.0.0/0, ::/0) are GA306's domain; skip them here so
+    # they don't fire against every other CIDR in the list.
+    _ga305_overlap_check(networks, results, phase, ref)
+
+
+_CATCH_ALL_CIDRS = frozenset({"0.0.0.0/0", "::/0"})
+
+
+def _ga305_overlap_check(
+    networks: list[tuple[str, ipaddress.IPv4Network | ipaddress.IPv6Network]],
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA305: detect overlapping/duplicate CIDRs in src_ip_ranges.
+
+    Sweep-line O(n log n). Each contained or duplicate CIDR is reported once
+    against its immediate parent in sorted order. Catch-all entries are
+    excluded — those are GA306's domain. Mirrors CF478, WA164, BN307.
+    """
+
+    def _sweep(
+        items: list[tuple[str, ipaddress.IPv4Network | ipaddress.IPv6Network]],
+    ) -> None:
+        # Broadest first when network addresses are equal: that puts the
+        # containing network on the active stack before any contained ones.
+        sorted_items = sorted(items, key=lambda x: (int(x[1].network_address), x[1].prefixlen))
+        active: list[tuple[str, ipaddress.IPv4Network | ipaddress.IPv6Network]] = []
+        for cidr, net in sorted_items:
+            while active and int(active[-1][1].broadcast_address) < int(net.network_address):
+                active.pop()
+            if active:
+                parent_cidr, parent_net = active[-1]
+                if net == parent_net:
+                    msg = f"Duplicate CIDR: {cidr}"
                 else:
-                    msg = f"Redundant: {cidr_a} contained in {cidr_b}"
+                    msg = f"Redundant: {cidr} contained in {parent_cidr}"
                 results.append(
                     _result(
                         rule_id="GA305",
@@ -947,6 +976,11 @@ def _check_cidrs(
                         field="match.config.src_ip_ranges",
                     )
                 )
+            active.append((cidr, net))
+
+    filtered = [(v, n) for v, n in networks if str(n) not in _CATCH_ALL_CIDRS]
+    _sweep([(v, n) for v, n in filtered if n.version == 4])
+    _sweep([(v, n) for v, n in filtered if n.version == 6])
 
 
 def _check_cel_length(
@@ -2303,7 +2337,7 @@ def _check_preconfigured_waf_config(
             )
 
 
-# --- GA600/GA601/GA602: Preview, always-true, always-false ------------------
+# --- GA600/GA601/GA602/GA603: Preview, enabled, always-true, always-false ----
 def _check_preview(
     rule: dict,
     results: list[LintResult],
@@ -2320,6 +2354,27 @@ def _check_preview(
                 phase=phase,
                 ref=ref,
                 field="preview",
+            )
+        )
+
+
+def _check_enabled(
+    rule: dict,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA603: inform when a rule has enabled: false."""
+    if rule.get("enabled") is False:
+        results.append(
+            _result(
+                rule_id="GA603",
+                severity=Severity.INFO,
+                message="Rule is disabled (enabled: false)",
+                phase=phase,
+                ref=ref,
+                field="enabled",
+                suggestion="Remove if no longer needed",
             )
         )
 

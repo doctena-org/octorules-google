@@ -53,7 +53,9 @@ GA404 = RuleMeta("GA404", "redirect", "EXTERNAL_302 redirect requires 'target' U
 GA405 = RuleMeta("GA405", "rate_limit", "conform_action must be 'allow'", Severity.ERROR)
 GA406 = RuleMeta("GA406", "rate_limit", "Invalid exceed_action", Severity.ERROR)
 GA407 = RuleMeta("GA407", "rate_limit", "Invalid interval_sec value", Severity.ERROR)
-# GA408 removed — count-range validation consolidated into GA421.
+# GA408 was reused briefly during 2026-04-27 patch development for an overlap rule
+# that turned out to duplicate GA305. Reverted before release; GA305 now uses
+# sweep-line O(n log n) directly. Don't re-use GA408 — leave the gap.
 
 # GA1xx continued — cross-rule analysis
 GA105 = RuleMeta(
@@ -263,6 +265,7 @@ GA602 = RuleMeta(
     "Expression is always false — rule never matches",
     Severity.WARNING,
 )
+GA603 = RuleMeta("GA603", "best_practice", "Rule is disabled (enabled: false)", Severity.INFO)
 
 # Collect all rule metas for registration
 GA_RULE_METAS: list[RuleMeta] = [obj for obj in globals().values() if isinstance(obj, RuleMeta)]

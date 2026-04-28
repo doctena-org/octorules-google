@@ -2,6 +2,7 @@
 
 import pytest
 from octorules.linter.engine import LintResult
+from octorules.testing.lint import assert_lint, assert_no_lint
 
 from octorules_google.validate import validate_rules
 
@@ -51,7 +52,7 @@ class TestValidRules:
 class TestUnknownFields:
     def test_ga020_unknown_field(self):
         r = _rule(bogus_field="x")
-        assert "GA020" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA020")
 
     def test_ga020_multiple_unknown_fields(self):
         r = _rule(foo="a", bar="b")
@@ -75,12 +76,12 @@ class TestUnknownFields:
             preview=True,
             header_action={"requestHeadersToAdds": []},
         )
-        assert "GA020" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA020")
 
     def test_ga020_kind_not_flagged(self):
         """'kind' is an API field preserved during normalization."""
         r = _rule(kind="compute#securityPolicyRule")
-        assert "GA020" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA020")
 
     def test_ga020_rate_limit_options_not_flagged(self):
         r = _rule(
@@ -91,22 +92,22 @@ class TestUnknownFields:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA020" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA020")
 
     def test_ga020_redirect_options_not_flagged(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "GOOGLE_RECAPTCHA"},
         )
-        assert "GA020" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA020")
 
     def test_ga020_network_match_not_flagged(self):
         r = _rule(network_match={"src_ip_ranges": ["10.0.0.0/8"]})
-        assert "GA020" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA020")
 
     def test_ga020_preconfigured_waf_config_not_flagged(self):
         r = _rule(preconfigured_waf_config={"waf_rules": []})
-        assert "GA020" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA020")
 
     def test_ga020_message_includes_field_name(self):
         r = _rule(typo_field="val")
@@ -122,23 +123,23 @@ class TestStructural:
     def test_ga001_missing_ref(self):
         r = _rule()
         del r["ref"]
-        assert "GA001" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA001")
 
     def test_ga001_empty_ref(self):
-        assert "GA001" in _ids(validate_rules([_rule(ref="")]))
+        assert_lint(validate_rules([_rule(ref="")]), "GA001")
 
     def test_ga002_missing_action(self):
         r = _rule()
         del r["action"]
-        assert "GA002" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA002")
 
     def test_ga002_empty_action(self):
-        assert "GA002" in _ids(validate_rules([_rule(action="")]))
+        assert_lint(validate_rules([_rule(action="")]), "GA002")
 
     def test_ga003_missing_match(self):
         r = _rule()
         del r["match"]
-        assert "GA003" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA003")
 
 
 # ---------------------------------------------------------------------------
@@ -146,32 +147,32 @@ class TestStructural:
 # ---------------------------------------------------------------------------
 class TestPriority:
     def test_ga100_not_integer_string(self):
-        assert "GA100" in _ids(validate_rules([_rule(ref="abc")]))
+        assert_lint(validate_rules([_rule(ref="abc")]), "GA100")
 
     def test_ga100_negative(self):
-        assert "GA100" in _ids(validate_rules([_rule(ref="-1")]))
+        assert_lint(validate_rules([_rule(ref="-1")]), "GA100")
 
     def test_ga100_float_string(self):
-        assert "GA100" in _ids(validate_rules([_rule(ref="1.5")]))
+        assert_lint(validate_rules([_rule(ref="1.5")]), "GA100")
 
     def test_ga100_zero_accepted(self):
-        assert "GA100" not in _ids(validate_rules([_rule(ref="0")]))
+        assert_no_lint(validate_rules([_rule(ref="0")]), "GA100")
 
     def test_ga101_out_of_range(self):
-        assert "GA101" in _ids(validate_rules([_rule(ref="2147483647")]))
+        assert_lint(validate_rules([_rule(ref="2147483647")]), "GA101")
 
     def test_ga101_max_valid(self):
-        assert "GA101" not in _ids(validate_rules([_rule(ref="2147483646")]))
+        assert_no_lint(validate_rules([_rule(ref="2147483646")]), "GA101")
 
     def test_ga102_duplicate(self):
         a = _rule(ref="100")
         b = _rule(ref="100")
-        assert "GA102" in _ids(validate_rules([a, b]))
+        assert_lint(validate_rules([a, b]), "GA102")
 
     def test_ga102_no_false_positive(self):
         a = _rule(ref="100")
         b = _rule(ref="200")
-        assert "GA102" not in _ids(validate_rules([a, b]))
+        assert_no_lint(validate_rules([a, b]), "GA102")
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +188,7 @@ class TestDuplicateRef:
     def test_ga005_no_false_positive(self):
         a = _rule(ref="100")
         b = _rule(ref="200")
-        assert "GA005" not in _ids(validate_rules([a, b]))
+        assert_no_lint(validate_rules([a, b]), "GA005")
 
     def test_ga005_fires_once_for_triple(self):
         """Three identical refs should emit GA005 only once (on second occurrence)."""
@@ -201,7 +202,7 @@ class TestDuplicateRef:
         del a["ref"]
         b = _rule()
         del b["ref"]
-        assert "GA005" not in _ids(validate_rules([a, b]))
+        assert_no_lint(validate_rules([a, b]), "GA005")
 
     def test_ga005_ref_in_result(self):
         a = _rule(ref="999")
@@ -220,7 +221,7 @@ class TestDeadRules:
                 match={"expr": {"expression": "origin.region_code == 'CN'"}},
             ),
         ]
-        assert "GA103" in _ids(validate_rules(rules))
+        assert_lint(validate_rules(rules), "GA103")
 
     def test_ga103_lower_priority_not_flagged(self):
         rules = [
@@ -248,7 +249,7 @@ class TestDeadRules:
                 match={"expr": {"expression": "origin.region_code == 'US'"}},
             ),
         ]
-        assert "GA103" not in _ids(validate_rules(rules))
+        assert_no_lint(validate_rules(rules), "GA103")
 
     def test_ga103_whitespace_in_true(self):
         rules = [
@@ -259,7 +260,7 @@ class TestDeadRules:
                 match={"expr": {"expression": "origin.ip == '1.2.3.4'"}},
             ),
         ]
-        assert "GA103" in _ids(validate_rules(rules))
+        assert_lint(validate_rules(rules), "GA103")
 
 
 class TestDuplicateExpressions:
@@ -268,21 +269,21 @@ class TestDuplicateExpressions:
             _rule(ref="100", match={"expr": {"expression": "origin.region_code == 'CN'"}}),
             _rule(ref="200", match={"expr": {"expression": "origin.region_code == 'CN'"}}),
         ]
-        assert "GA104" in _ids(validate_rules(rules))
+        assert_lint(validate_rules(rules), "GA104")
 
     def test_ga104_whitespace_normalized(self):
         rules = [
             _rule(ref="100", match={"expr": {"expression": "origin.region_code  ==  'CN'"}}),
             _rule(ref="200", match={"expr": {"expression": "origin.region_code == 'CN'"}}),
         ]
-        assert "GA104" in _ids(validate_rules(rules))
+        assert_lint(validate_rules(rules), "GA104")
 
     def test_ga104_different_expressions(self):
         rules = [
             _rule(ref="100", match={"expr": {"expression": "origin.region_code == 'CN'"}}),
             _rule(ref="200", match={"expr": {"expression": "origin.region_code == 'RU'"}}),
         ]
-        assert "GA104" not in _ids(validate_rules(rules))
+        assert_no_lint(validate_rules(rules), "GA104")
 
 
 # ---------------------------------------------------------------------------
@@ -312,13 +313,13 @@ class TestActions:
             }
         if action == "redirect":
             r["redirect_options"] = {"type": "GOOGLE_RECAPTCHA"}
-        assert "GA200" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA200")
 
     def test_ga200_invalid_action(self):
-        assert "GA200" in _ids(validate_rules([_rule(action="block")]))
+        assert_lint(validate_rules([_rule(action="block")]), "GA200")
 
     def test_ga200_deny_without_parens(self):
-        assert "GA200" in _ids(validate_rules([_rule(action="deny")]))
+        assert_lint(validate_rules([_rule(action="deny")]), "GA200")
 
     def test_ga200_bare_deny_targeted_suggestion(self):
         """Bare 'deny' produces GA200 with the targeted status-code suggestion."""
@@ -336,17 +337,17 @@ class TestActions:
         assert "Valid actions:" in ga200[0].suggestion
 
     def test_ga201_invalid_deny_status(self):
-        assert "GA201" in _ids(validate_rules([_rule(action="deny(500)")]))
+        assert_lint(validate_rules([_rule(action="deny(500)")]), "GA201")
 
     def test_ga201_valid_deny_no_201(self):
-        assert "GA201" not in _ids(validate_rules([_rule(action="deny(403)")]))
+        assert_no_lint(validate_rules([_rule(action="deny(403)")]), "GA201")
 
     def test_ga201_deny_200(self):
-        assert "GA201" in _ids(validate_rules([_rule(action="deny(200)")]))
+        assert_lint(validate_rules([_rule(action="deny(200)")]), "GA201")
 
     def test_ga201_deny_429_valid(self):
         """deny(429) is a valid deny status and should not trigger GA201."""
-        assert "GA201" not in _ids(validate_rules([_rule(action="deny(429)")]))
+        assert_no_lint(validate_rules([_rule(action="deny(429)")]), "GA201")
 
 
 # ---------------------------------------------------------------------------
@@ -358,61 +359,61 @@ class TestMatch:
             "expr": {"expression": "true"},
             "config": {"src_ip_ranges": ["1.2.3.0/24"]},
         }
-        assert "GA300" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA300")
 
     def test_ga300_neither_expr_nor_config(self):
-        assert "GA300" in _ids(validate_rules([_rule(match={})]))
+        assert_lint(validate_rules([_rule(match={})]), "GA300")
 
     def test_ga300_expr_only_ok(self):
         match = {"expr": {"expression": "true"}}
-        assert "GA300" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA300")
 
     def test_ga300_config_only_ok(self):
         match = {"config": {"src_ip_ranges": ["8.8.8.0/24"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA300" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA300")
 
     def test_ga300_versioned_expr_counts_as_config(self):
         match = {"versioned_expr": "SRC_IPS_V1"}
-        assert "GA300" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA300")
 
     def test_ga301_invalid_cidr(self):
         match = {"config": {"src_ip_ranges": ["not-a-cidr"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA301" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA301")
 
     def test_ga301_valid_cidr(self):
         match = {
             "config": {"src_ip_ranges": ["8.8.8.0/24", "2001:4860::/32"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA301" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA301")
 
     def test_ga301_host_address(self):
         match = {"config": {"src_ip_ranges": ["8.8.8.8/32"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA301" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA301")
 
     def test_ga302_cel_syntax_error(self):
         match = {"expr": {"expression": "((("}}
-        assert "GA302" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA302")
 
     def test_ga302_cel_valid(self):
         match = {"expr": {"expression": "true"}}
-        assert "GA302" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA302")
 
     def test_ga302_cel_function_call(self):
         match = {"expr": {"expression": "origin.region_code == 'US'"}}
-        assert "GA302" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA302")
 
     def test_ga303_unknown_waf_rule_set(self):
         match = {"expr": {"expression": "evaluatePreconfiguredWaf('unknown-v1-stable')"}}
-        assert "GA303" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA303")
 
     def test_ga303_known_waf_rule_set(self):
         match = {"expr": {"expression": "evaluatePreconfiguredWaf('sqli-v33-stable')"}}
-        assert "GA303" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA303")
 
     def test_ga303_known_xss(self):
         match = {"expr": {"expression": "evaluatePreconfiguredExpr('xss-v33-stable')"}}
-        assert "GA303" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA303")
 
     def test_ga303_multiple_preconfigured(self):
         expr = "evaluatePreconfiguredWaf('sqli-v33-stable') && evaluatePreconfiguredWaf('bogus-v1')"
@@ -426,18 +427,18 @@ class TestCelLength:
     def test_ga304_exceeds_max(self):
         match = {"expr": {"expression": "x" * 2049}}
         results = validate_rules([_rule(match=match)])
-        assert "GA304" in _ids(results)
+        assert_lint(results, "GA304")
 
     def test_ga304_at_limit(self):
         # 2048 chars starting with valid CEL
         expr = "true" + " " * 2044
         match = {"expr": {"expression": expr}}
         results = validate_rules([_rule(match=match)])
-        assert "GA304" not in _ids(results)
+        assert_no_lint(results, "GA304")
 
     def test_ga304_under_limit(self):
         match = {"expr": {"expression": "origin.region_code == 'US'"}}
-        assert "GA304" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA304")
 
 
 class TestCidrChecks:
@@ -446,70 +447,70 @@ class TestCidrChecks:
             "config": {"src_ip_ranges": ["8.8.0.0/16", "8.8.8.0/24"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA305" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA305")
 
     def test_ga305_duplicate(self):
         match = {
             "config": {"src_ip_ranges": ["8.8.8.0/24", "8.8.8.0/24"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA305" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA305")
 
     def test_ga305_no_overlap(self):
         match = {
             "config": {"src_ip_ranges": ["8.8.8.0/24", "1.1.1.0/24"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA305" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA305")
 
     def test_ga305_ipv4_ipv6_no_overlap(self):
         match = {
             "config": {"src_ip_ranges": ["8.8.8.0/24", "2001:db8::/32"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA305" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA305")
 
     def test_ga306_slash_zero_ipv4(self):
         match = {"config": {"src_ip_ranges": ["0.0.0.0/0"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA306" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA306")
 
     def test_ga306_slash_zero_ipv6(self):
         match = {"config": {"src_ip_ranges": ["::/0"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA306" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA306")
 
     def test_ga306_not_slash_zero(self):
         match = {"config": {"src_ip_ranges": ["8.8.8.0/24"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA306" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA306")
 
     def test_ga503_private_rfc1918(self):
         match = {"config": {"src_ip_ranges": ["10.0.0.0/8"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA503")
 
     def test_ga503_private_172(self):
         match = {"config": {"src_ip_ranges": ["172.16.0.0/12"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA503")
 
     def test_ga503_private_192(self):
         match = {"config": {"src_ip_ranges": ["192.168.1.0/24"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA503")
 
     def test_ga503_loopback(self):
         match = {"config": {"src_ip_ranges": ["127.0.0.1/32"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA503")
 
     def test_ga503_public_not_flagged(self):
         match = {"config": {"src_ip_ranges": ["8.8.8.0/24"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA503" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA503")
 
     def test_ga503_ipv6_ula(self):
         match = {"config": {"src_ip_ranges": ["fd00::/8"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA503")
 
     def test_ga503_cgnat(self):
         """CGNAT range (100.64.0.0/10) should be flagged as reserved."""
         match = {"config": {"src_ip_ranges": ["100.64.1.0/24"]}, "versioned_expr": "SRC_IPS_V1"}
         results = validate_rules([_rule(match=match)])
-        assert "GA503" in _ids(results)
+        assert_lint(results, "GA503")
         ga503 = [r for r in results if r.rule_id == "GA503"]
         assert "CGNAT" in ga503[0].message
 
@@ -520,7 +521,7 @@ class TestCidrChecks:
             "versioned_expr": "SRC_IPS_V1",
         }
         results = validate_rules([_rule(match=match)])
-        assert "GA503" in _ids(results)
+        assert_lint(results, "GA503")
         ga503 = [r for r in results if r.rule_id == "GA503"]
         assert "documentation" in ga503[0].message
 
@@ -530,7 +531,7 @@ class TestCidrChecks:
             "config": {"src_ip_ranges": ["198.18.0.0/15"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA503")
 
     def test_ga503_ipv6_documentation(self):
         """IPv6 documentation prefix (2001:db8::/32) should be flagged."""
@@ -539,7 +540,7 @@ class TestCidrChecks:
             "versioned_expr": "SRC_IPS_V1",
         }
         results = validate_rules([_rule(match=match)])
-        assert "GA503" in _ids(results)
+        assert_lint(results, "GA503")
         ga503 = [r for r in results if r.rule_id == "GA503"]
         assert "documentation" in ga503[0].message
 
@@ -549,7 +550,7 @@ class TestCidrChecks:
             "config": {"src_ip_ranges": ["224.0.0.0/4"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA503" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA503")
 
     # --- GA307: CIDR host bits normalization warning ---
 
@@ -572,7 +573,7 @@ class TestCidrChecks:
             "config": {"src_ip_ranges": ["10.0.0.0/24"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA307" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA307")
 
     def test_ga307_host_address_no_warning(self):
         """/32 host address is exact — no normalization needed."""
@@ -580,7 +581,7 @@ class TestCidrChecks:
             "config": {"src_ip_ranges": ["10.0.0.1/32"]},
             "versioned_expr": "SRC_IPS_V1",
         }
-        assert "GA307" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA307")
 
     def test_ga307_ipv6_host_bits(self):
         """IPv6 CIDR with host bits set emits GA307."""
@@ -614,16 +615,74 @@ class TestCidrChecks:
         assert len(ga307) == 1
         assert "192.168.1.0/24" in ga307[0].suggestion
 
+    # --- GA305: extra coverage for sweep-line implementation ---
+
+    def test_ga305_ipv6_overlap(self):
+        """GA305: IPv6 containment is detected the same as IPv4."""
+        match = {
+            "config": {"src_ip_ranges": ["2001:db8::/32", "2001:db8:1234::/48"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        assert_lint(validate_rules([_rule(match=match)]), "GA305")
+
+    def test_ga305_adjacent_not_overlapping(self):
+        """GA305: adjacent /9s (10.0.0.0/9 and 10.128.0.0/9) do not overlap."""
+        match = {
+            "config": {"src_ip_ranges": ["10.0.0.0/9", "10.128.0.0/9"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA305")
+
+    def test_ga305_catch_all_v4_excluded(self):
+        """GA305 skips 0.0.0.0/0 — that is GA306's job, not an overlap finding."""
+        match = {
+            "config": {"src_ip_ranges": ["0.0.0.0/0", "10.0.0.0/8"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        results = validate_rules([_rule(match=match)])
+        assert_no_lint(results, "GA305")
+        assert_lint(results, "GA306")
+
+    def test_ga305_catch_all_v6_excluded(self):
+        """GA305 skips ::/0 — that is GA306's job, not an overlap finding."""
+        match = {
+            "config": {"src_ip_ranges": ["::/0", "2001:db8::/32"]},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        results = validate_rules([_rule(match=match)])
+        assert_no_lint(results, "GA305")
+        assert_lint(results, "GA306")
+
+    def test_ga305_sweep_line_fast_on_large_input(self):
+        """GA305 must be O(n log n): 1000 disjoint /32s lint in well under a second.
+
+        Locks in the sweep-line rewrite. The previous O(n²) pairwise check
+        scaled badly on real-world IP lists.
+        """
+        import time
+
+        cidrs = [f"10.{i // 256}.{i % 256}.0/32" for i in range(1000)]
+        match = {
+            "config": {"src_ip_ranges": cidrs},
+            "versioned_expr": "SRC_IPS_V1",
+        }
+        start = time.perf_counter()
+        results = validate_rules([_rule(match=match)])
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < 1.0, f"GA305 sweep-line too slow: {elapsed:.3f}s for 1000 entries"
+        assert_no_lint(results, "GA305")
+
 
 # ---------------------------------------------------------------------------
-# GA400-GA407  Rate limit options (GA408 removed — consolidated into GA421)
+# GA400-GA407  Rate limit options
 # ---------------------------------------------------------------------------
 class TestRateLimitOptions:
     def test_ga400_throttle_missing_rate_limit(self):
-        assert "GA400" in _ids(validate_rules([_rule(action="throttle")]))
+        assert_lint(validate_rules([_rule(action="throttle")]), "GA400")
 
     def test_ga400_rate_based_ban_missing_rate_limit(self):
-        assert "GA400" in _ids(validate_rules([_rule(action="rate_based_ban")]))
+        assert_lint(validate_rules([_rule(action="rate_based_ban")]), "GA400")
 
     def test_ga400_throttle_with_rate_limit(self):
         r = _rule(
@@ -634,7 +693,7 @@ class TestRateLimitOptions:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA400" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA400")
 
     def test_ga403_missing_conform_action(self):
         r = _rule(
@@ -690,7 +749,7 @@ class TestRateLimitOptions:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA405" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA405")
 
     def test_ga405_conform_action_allow_ok(self):
         r = _rule(
@@ -701,7 +760,7 @@ class TestRateLimitOptions:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA405" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA405")
 
     @pytest.mark.parametrize("ea", ["deny-403", "deny-404", "deny-429", "deny-502", "redirect"])
     def test_ga406_valid_exceed_actions(self, ea):
@@ -713,7 +772,7 @@ class TestRateLimitOptions:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA406" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA406")
 
     def test_ga406_invalid_exceed_action(self):
         r = _rule(
@@ -724,7 +783,7 @@ class TestRateLimitOptions:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA406" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA406")
 
     @pytest.mark.parametrize("interval", [10, 30, 60, 120, 300, 600, 3600])
     def test_ga407_valid_intervals(self, interval):
@@ -736,7 +795,7 @@ class TestRateLimitOptions:
                 "rate_limit_threshold": {"count": 100, "interval_sec": interval},
             },
         )
-        assert "GA407" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA407")
 
     def test_ga407_invalid_interval(self):
         r = _rule(
@@ -747,7 +806,7 @@ class TestRateLimitOptions:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 45},
             },
         )
-        assert "GA407" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA407")
 
     def test_ga408_removed_count_validated_by_ga421_only(self):
         """Count range/type is now checked by GA421, not GA408.
@@ -764,8 +823,8 @@ class TestRateLimitOptions:
             },
         )
         results = validate_rules([r])
-        assert "GA408" not in _ids(results)
-        assert "GA421" in _ids(results)
+        assert_no_lint(results, "GA408")
+        assert_lint(results, "GA421")
 
 
 # ---------------------------------------------------------------------------
@@ -773,39 +832,39 @@ class TestRateLimitOptions:
 # ---------------------------------------------------------------------------
 class TestRedirectOptions:
     def test_ga401_redirect_missing_options(self):
-        assert "GA401" in _ids(validate_rules([_rule(action="redirect")]))
+        assert_lint(validate_rules([_rule(action="redirect")]), "GA401")
 
     def test_ga401_redirect_with_options(self):
         r = _rule(action="redirect", redirect_options={"type": "GOOGLE_RECAPTCHA"})
-        assert "GA401" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA401")
 
     def test_ga402_invalid_redirect_type(self):
         r = _rule(action="redirect", redirect_options={"type": "INVALID"})
-        assert "GA402" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA402")
 
     @pytest.mark.parametrize("rtype", ["GOOGLE_RECAPTCHA", "EXTERNAL_302"])
     def test_ga402_valid_redirect_types(self, rtype):
         r = _rule(action="redirect", redirect_options={"type": rtype, "target": "https://x.com"})
-        assert "GA402" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA402")
 
     def test_ga402_no_type_key_no_error(self):
         r = _rule(action="redirect", redirect_options={})
-        assert "GA402" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA402")
 
     def test_ga404_external_302_missing_target(self):
         r = _rule(action="redirect", redirect_options={"type": "EXTERNAL_302"})
-        assert "GA404" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA404")
 
     def test_ga404_external_302_with_target(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": "https://example.com"},
         )
-        assert "GA404" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA404")
 
     def test_ga404_recaptcha_no_target_ok(self):
         r = _rule(action="redirect", redirect_options={"type": "GOOGLE_RECAPTCHA"})
-        assert "GA404" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA404")
 
 
 # ---------------------------------------------------------------------------
@@ -814,14 +873,14 @@ class TestRedirectOptions:
 class TestDescription:
     def test_ga500_too_long(self):
         r = _rule(description="x" * 1025)
-        assert "GA500" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA500")
 
     def test_ga500_at_limit(self):
         r = _rule(description="x" * 1024)
-        assert "GA500" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA500")
 
     def test_ga500_no_description(self):
-        assert "GA500" not in _ids(validate_rules([_rule()]))
+        assert_no_lint(validate_rules([_rule()]), "GA500")
 
 
 # ---------------------------------------------------------------------------
@@ -832,71 +891,71 @@ class TestMatchDeep:
 
     def test_ga310_unknown_field(self):
         match = {"expr": {"expression": "bogus.field == 'x'"}}
-        assert "GA310" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_origin_ip(self):
         match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_request_headers(self):
         match = {"expr": {"expression": "request.headers['X-Foo'] == 'bar'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_request_method(self):
         match = {"expr": {"expression": "request.method == 'GET'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_request_path(self):
         match = {"expr": {"expression": "request.path.startsWith('/api')"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_request_scheme(self):
         match = {"expr": {"expression": "request.scheme == 'https'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_request_query(self):
         match = {"expr": {"expression": "request.query.contains('foo')"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_request_url(self):
         match = {"expr": {"expression": "request.url.contains('/api')"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_origin_region_code(self):
         match = {"expr": {"expression": "origin.region_code == 'US'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_origin_asn(self):
         match = {"expr": {"expression": "origin.asn == 15169"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_origin_user_ip(self):
         match = {"expr": {"expression": "origin.user_ip == '1.2.3.4'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_origin_tls_ja3(self):
         match = {"expr": {"expression": "origin.tls_ja3_fingerprint == 'abc'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_origin_tls_ja4(self):
         match = {"expr": {"expression": "origin.tls_ja4_fingerprint == 'abc'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_token_recaptcha_action(self):
         match = {"expr": {"expression": "token.recaptcha_action.score > 0.5"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_token_recaptcha_session(self):
         match = {"expr": {"expression": "token.recaptcha_session.score > 0.5"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_token_recaptcha_exemption(self):
         match = {"expr": {"expression": "token.recaptcha_exemption.valid == true"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_known_request_host(self):
         match = {"expr": {"expression": "request.host == 'example.com'"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_multiple_unknown(self):
         match = {"expr": {"expression": "bogus.one == 'x' && fake.two == 'y'"}}
@@ -913,94 +972,94 @@ class TestMatchDeep:
     def test_ga310_no_false_positive_on_true(self):
         """'true' alone has no dotted field references."""
         match = {"expr": {"expression": "true"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     # --- GA311: Unknown function ---
 
     def test_ga311_unknown_function(self):
         match = {"expr": {"expression": "unknownFunc(origin.ip)"}}
-        assert "GA311" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_contains(self):
         match = {"expr": {"expression": "request.path.contains('/api')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_startsWith(self):
         match = {"expr": {"expression": "request.path.startsWith('/api')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_endsWith(self):
         match = {"expr": {"expression": "request.path.endsWith('.html')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_matches(self):
         match = {"expr": {"expression": "request.path.matches('.*api.*')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_lower(self):
         match = {"expr": {"expression": "request.method.lower() == 'get'"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_upper(self):
         match = {"expr": {"expression": "request.method.upper() == 'GET'"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_base64Decode(self):
         match = {"expr": {"expression": "request.headers['auth'].base64Decode() == 'x'"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_inIpRange(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '1.0.0.0/8')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_size(self):
         match = {"expr": {"expression": "size(request.query) > 100"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_int(self):
         match = {"expr": {"expression": "int(request.headers['x']) > 100"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_evaluatePreconfiguredWaf(self):
         match = {"expr": {"expression": "evaluatePreconfiguredWaf('sqli-v33-stable')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_evaluatePreconfiguredExpr(self):
         match = {"expr": {"expression": "evaluatePreconfiguredExpr('xss-v33-stable')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_has(self):
         match = {"expr": {"expression": "has(request.headers['X-Custom'])"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_evaluateThreatIntelligence(self):
         match = {"expr": {"expression": "evaluateThreatIntelligence('iplist-known-malicious-ips')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_evaluateThreatIntelligenceWithExcl(self):
         expr = "evaluateThreatIntelligenceWithExcl('iplist-known-malicious-ips', ['1.2.3.0/24'])"
         match = {"expr": {"expression": expr}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_evaluateJsonPath(self):
         match = {"expr": {"expression": "evaluateJsonPath(request.body, '$.user')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_evaluateAdaptiveProtection(self):
         match = {"expr": {"expression": "evaluateAdaptiveProtection()"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_evaluateAdaptiveProtectionAutoDeploy(self):
         match = {"expr": {"expression": "evaluateAdaptiveProtectionAutoDeploy()"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_urlDecode(self):
         match = {"expr": {"expression": "request.path.urlDecode().contains('/admin')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_known_htmlDecode(self):
         match = {"expr": {"expression": "request.body.htmlDecode().contains('<script')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_deduped(self):
         match = {"expr": {"expression": "badFunc(1) || badFunc(2)"}}
@@ -1013,76 +1072,76 @@ class TestMatchDeep:
     def test_ga310_no_false_positive_in_string_literal(self):
         """Field-like text inside quoted strings should not trigger GA310."""
         match = {"expr": {"expression": "request.path.contains('origin.ip')"}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_no_false_positive_in_header_subscript(self):
         """Header key subscripts should not be extracted as field references."""
         match = {"expr": {"expression": 'request.headers["origin.ip.test"]'}}
-        assert "GA310" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_real_field_outside_string_still_caught(self):
         """Unknown field outside a string is still flagged even if strings are present."""
         match = {"expr": {"expression": "unknown.field == 'origin.ip'"}}
-        assert "GA310" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga311_no_false_positive_in_string_literal(self):
         """Function-like text inside quoted strings should not trigger GA311."""
         match = {"expr": {"expression": "request.path.contains('badFunc()')"}}
-        assert "GA311" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     # --- GA312: Invalid versioned_expr ---
 
     def test_ga312_invalid_versioned_expr(self):
         match = {"versioned_expr": "BOGUS", "config": {"src_ip_ranges": ["1.2.3.0/24"]}}
-        assert "GA312" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA312")
 
     def test_ga312_valid_src_ips_v1(self):
         match = {"versioned_expr": "SRC_IPS_V1", "config": {"src_ip_ranges": ["1.2.3.0/24"]}}
-        assert "GA312" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA312")
 
     # --- GA313: Missing config with versioned_expr ---
 
     def test_ga313_versioned_expr_no_config(self):
         match = {"versioned_expr": "SRC_IPS_V1"}
-        assert "GA313" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA313")
 
     def test_ga313_versioned_expr_config_no_ranges(self):
         match = {"versioned_expr": "SRC_IPS_V1", "config": {}}
-        assert "GA313" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA313")
 
     def test_ga313_versioned_expr_config_not_dict(self):
         match = {"versioned_expr": "SRC_IPS_V1", "config": "invalid"}
-        assert "GA313" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA313")
 
     def test_ga313_versioned_expr_with_ranges_ok(self):
         match = {"versioned_expr": "SRC_IPS_V1", "config": {"src_ip_ranges": ["1.2.3.0/24"]}}
-        assert "GA313" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA313")
 
     # --- GA314: Empty match conditions ---
 
     def test_ga314_empty_expression(self):
         match = {"expr": {"expression": ""}}
-        assert "GA314" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA314")
 
     def test_ga314_whitespace_only_expression(self):
         match = {"expr": {"expression": "   "}}
-        assert "GA314" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA314")
 
     def test_ga314_tab_only_expression(self):
         match = {"expr": {"expression": "\t\n"}}
-        assert "GA314" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA314")
 
     def test_ga314_empty_src_ip_ranges(self):
         match = {"config": {"src_ip_ranges": []}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA314" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA314")
 
     def test_ga314_nonempty_expression_ok(self):
         match = {"expr": {"expression": "true"}}
-        assert "GA314" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA314")
 
     def test_ga314_nonempty_ranges_ok(self):
         match = {"config": {"src_ip_ranges": ["1.2.3.0/24"]}, "versioned_expr": "SRC_IPS_V1"}
-        assert "GA314" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA314")
 
 
 # ---------------------------------------------------------------------------
@@ -1114,15 +1173,15 @@ class TestRateLimitDeep:
 
     def test_ga420_threshold_not_dict(self):
         r = self._rl_rule(rate_limit_threshold="invalid")
-        assert "GA420" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA420")
 
     def test_ga420_threshold_missing_count(self):
         r = self._rl_rule(rate_limit_threshold={"interval_sec": 60})
-        assert "GA420" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA420")
 
     def test_ga420_threshold_missing_interval_sec(self):
         r = self._rl_rule(rate_limit_threshold={"count": 100})
-        assert "GA420" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA420")
 
     def test_ga420_threshold_missing_both(self):
         r = self._rl_rule(rate_limit_threshold={})
@@ -1132,47 +1191,47 @@ class TestRateLimitDeep:
 
     def test_ga420_threshold_complete_ok(self):
         r = self._rl_rule(rate_limit_threshold={"count": 100, "interval_sec": 60})
-        assert "GA420" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA420")
 
     # --- GA421: Invalid types ---
 
     def test_ga421_count_is_string(self):
         r = self._rl_rule(rate_limit_threshold={"count": "100", "interval_sec": 60})
-        assert "GA421" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA421")
 
     def test_ga421_count_is_bool(self):
         r = self._rl_rule(rate_limit_threshold={"count": True, "interval_sec": 60})
-        assert "GA421" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA421")
 
     def test_ga421_interval_is_string(self):
         r = self._rl_rule(rate_limit_threshold={"count": 100, "interval_sec": "60"})
-        assert "GA421" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA421")
 
     def test_ga421_interval_is_bool(self):
         r = self._rl_rule(rate_limit_threshold={"count": 100, "interval_sec": False})
-        assert "GA421" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA421")
 
     def test_ga421_both_valid_ints_ok(self):
         r = self._rl_rule(rate_limit_threshold={"count": 100, "interval_sec": 60})
-        assert "GA421" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA421")
 
     # --- GA422: enforce_on_key for rate_based_ban with redirect ---
 
     def test_ga422_rate_based_ban_redirect_no_key(self):
         r = self._ban_rule(exceed_action="redirect")
-        assert "GA422" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA422")
 
     def test_ga422_rate_based_ban_redirect_with_key(self):
         r = self._ban_rule(exceed_action="redirect", enforce_on_key="IP")
-        assert "GA422" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA422")
 
     def test_ga422_throttle_redirect_no_key_no_warning(self):
         r = self._rl_rule(exceed_action="redirect")
-        assert "GA422" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA422")
 
     def test_ga422_rate_based_ban_deny_no_key_no_warning(self):
         r = self._ban_rule(exceed_action="deny-429")
-        assert "GA422" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA422")
 
     # --- GA423: Invalid enforce_on_key ---
 
@@ -1202,33 +1261,33 @@ class TestRateLimitDeep:
         if key in ("HTTP_HEADER", "HTTP_COOKIE"):
             rlo["enforce_on_key_name"] = "X-Something"
         r = _rule(action="throttle", rate_limit_options=rlo)
-        assert "GA423" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA423")
 
     def test_ga423_invalid_key(self):
         r = self._rl_rule(enforce_on_key="INVALID")
-        assert "GA423" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA423")
 
     # --- GA424: enforce_on_key_name required ---
 
     def test_ga424_http_header_no_name(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER")
-        assert "GA424" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA424")
 
     def test_ga424_http_cookie_no_name(self):
         r = self._rl_rule(enforce_on_key="HTTP_COOKIE")
-        assert "GA424" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA424")
 
     def test_ga424_http_header_with_name(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Custom")
-        assert "GA424" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA424")
 
     def test_ga424_http_cookie_with_name(self):
         r = self._rl_rule(enforce_on_key="HTTP_COOKIE", enforce_on_key_name="session")
-        assert "GA424" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA424")
 
     def test_ga424_ip_no_name_ok(self):
         r = self._rl_rule(enforce_on_key="IP")
-        assert "GA424" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA424")
 
     # --- GA425: ban_duration_sec required for rate_based_ban ---
 
@@ -1239,135 +1298,135 @@ class TestRateLimitDeep:
             "rate_limit_threshold": {"count": 100, "interval_sec": 60},
         }
         r = _rule(action="rate_based_ban", rate_limit_options=rlo)
-        assert "GA425" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA425")
 
     def test_ga425_rate_based_ban_with_ban_duration(self):
         r = self._ban_rule(ban_duration_sec=120)
-        assert "GA425" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA425")
 
     def test_ga425_throttle_no_ban_duration_ok(self):
         r = self._rl_rule()
-        assert "GA425" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA425")
 
     # --- GA426: Invalid ban_duration_sec ---
 
     def test_ga426_zero(self):
         r = self._ban_rule(ban_duration_sec=0)
-        assert "GA426" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA426")
 
     def test_ga426_negative(self):
         r = self._ban_rule(ban_duration_sec=-10)
-        assert "GA426" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA426")
 
     def test_ga426_bool(self):
         r = self._ban_rule(ban_duration_sec=True)
-        assert "GA426" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA426")
 
     def test_ga426_string(self):
         r = self._ban_rule(ban_duration_sec="120")
-        assert "GA426" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA426")
 
     def test_ga426_positive_int_ok(self):
         r = self._ban_rule(ban_duration_sec=120)
-        assert "GA426" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA426")
 
     # --- GA427: ban_duration_sec exceeds maximum ---
 
     def test_ga427_exceeds_max(self):
         r = self._ban_rule(ban_duration_sec=3601)
-        assert "GA427" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA427")
 
     def test_ga427_at_max(self):
         r = self._ban_rule(ban_duration_sec=3600)
-        assert "GA427" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA427")
 
     def test_ga427_well_under_max(self):
         r = self._ban_rule(ban_duration_sec=120)
-        assert "GA427" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA427")
 
     def test_ga427_way_over_max(self):
         r = self._ban_rule(ban_duration_sec=86400)
-        assert "GA427" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA427")
 
     # --- GA430: ban_duration_sec very short ---
 
     def test_ga430_very_short(self):
         r = self._ban_rule(ban_duration_sec=10)
-        assert "GA430" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA430")
 
     def test_ga430_boundary_59(self):
         """59 seconds is below the 60s threshold — should trigger."""
         r = self._ban_rule(ban_duration_sec=59)
-        assert "GA430" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA430")
 
     def test_ga430_at_60_ok(self):
         r = self._ban_rule(ban_duration_sec=60)
-        assert "GA430" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA430")
 
     def test_ga427_not_triggered_for_invalid_type(self):
         """GA426 fires for non-int, GA427 should not also fire."""
         r = self._ban_rule(ban_duration_sec="9999")
-        assert "GA426" in _ids(validate_rules([r]))
-        assert "GA427" not in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA426")
+        assert_no_lint(validate_rules([r]), "GA427")
 
     def test_ga427_not_triggered_for_negative(self):
         """GA426 fires for <= 0, GA427 should not also fire."""
         r = self._ban_rule(ban_duration_sec=-1)
-        assert "GA426" in _ids(validate_rules([r]))
-        assert "GA427" not in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA426")
+        assert_no_lint(validate_rules([r]), "GA427")
 
     # --- GA428: enforce_on_key_name content validation ---
 
     def test_ga428_empty_name(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="")
-        assert "GA428" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA428")
 
     def test_ga428_too_long(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X" * 129)
-        assert "GA428" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA428")
 
     def test_ga428_at_max_length(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X" * 128)
-        assert "GA428" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA428")
 
     def test_ga428_control_chars(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Bad\x00")
-        assert "GA428" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA428")
 
     def test_ga428_tab_control_char(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Bad\t")
-        assert "GA428" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA428")
 
     def test_ga428_spaces(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X Bad Header")
-        assert "GA428" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA428")
 
     def test_ga428_invalid_header_chars(self):
         """RFC 7230: header names must be tchar only. Parentheses are not allowed."""
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Bad(Header)")
-        assert "GA428" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA428")
 
     def test_ga428_valid_header_name(self):
         r = self._rl_rule(enforce_on_key="HTTP_HEADER", enforce_on_key_name="X-Custom-Header")
-        assert "GA428" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA428")
 
     def test_ga428_valid_cookie_name(self):
         r = self._rl_rule(enforce_on_key="HTTP_COOKIE", enforce_on_key_name="session_id")
-        assert "GA428" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA428")
 
     def test_ga428_cookie_spaces_flagged(self):
         r = self._rl_rule(enforce_on_key="HTTP_COOKIE", enforce_on_key_name="bad cookie")
-        assert "GA428" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA428")
 
     def test_ga428_cookie_no_rfc7230_check(self):
         """RFC 7230 header-name check only applies to HTTP_HEADER, not HTTP_COOKIE."""
         r = self._rl_rule(enforce_on_key="HTTP_COOKIE", enforce_on_key_name="session(id)")
-        assert "GA428" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA428")
 
     def test_ga428_ip_key_not_checked(self):
         """GA428 only applies to HTTP_HEADER/HTTP_COOKIE, not other key types."""
         r = self._rl_rule(enforce_on_key="IP", enforce_on_key_name="anything")
-        assert "GA428" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA428")
 
 
 # ---------------------------------------------------------------------------
@@ -1386,7 +1445,7 @@ class TestActionParams:
                 "ban_duration_sec": 120,
             },
         )
-        assert "GA429" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA429")
 
     def test_ga429_rate_based_ban_with_ban_duration_ok(self):
         r = _rule(
@@ -1398,7 +1457,7 @@ class TestActionParams:
                 "ban_duration_sec": 120,
             },
         )
-        assert "GA429" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA429")
 
     def test_ga429_throttle_without_ban_duration_ok(self):
         r = _rule(
@@ -1409,7 +1468,7 @@ class TestActionParams:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA429" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA429")
 
     # --- GA431: redirect exceed_action without redirect options ---
 
@@ -1422,7 +1481,7 @@ class TestActionParams:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA431" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA431")
 
     def test_ga431_redirect_exceed_with_redirect_options(self):
         r = _rule(
@@ -1434,7 +1493,7 @@ class TestActionParams:
                 "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
             },
         )
-        assert "GA431" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA431")
 
     def test_ga431_deny_exceed_no_redirect_options_ok(self):
         r = _rule(
@@ -1445,7 +1504,7 @@ class TestActionParams:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA431" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA431")
 
     # --- GA432: Conflicting rate-limit options ---
 
@@ -1459,7 +1518,7 @@ class TestActionParams:
                 "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
             },
         )
-        assert "GA432" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA432")
 
     def test_ga432_exceed_redirect_options_with_redirect_action_ok(self):
         r = _rule(
@@ -1471,7 +1530,7 @@ class TestActionParams:
                 "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
             },
         )
-        assert "GA432" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA432")
 
     def test_ga432_ban_threshold_without_rate_limit_threshold(self):
         r = _rule(
@@ -1483,7 +1542,7 @@ class TestActionParams:
                 "ban_duration_sec": 120,
             },
         )
-        assert "GA432" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA432")
 
     def test_ga432_ban_threshold_with_rate_limit_threshold_ok(self):
         r = _rule(
@@ -1496,7 +1555,7 @@ class TestActionParams:
                 "ban_duration_sec": 120,
             },
         )
-        assert "GA432" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA432")
 
     def test_ga432_no_exceed_redirect_options_no_error(self):
         """Absence of exceed_redirect_options should not trigger GA432."""
@@ -1508,7 +1567,7 @@ class TestActionParams:
                 "rate_limit_threshold": {"count": 100, "interval_sec": 60},
             },
         )
-        assert "GA432" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA432")
 
 
 # ---------------------------------------------------------------------------
@@ -1538,7 +1597,7 @@ class TestCrossRuleAnalysis:
                 "enforce_on_key": "IP",
             },
         )
-        assert "GA105" not in _ids(validate_rules([r1, r2]))
+        assert_no_lint(validate_rules([r1, r2]), "GA105")
 
     def test_ga105_different_keys_warning(self):
         r1 = _rule(
@@ -1562,7 +1621,7 @@ class TestCrossRuleAnalysis:
                 "ban_duration_sec": 120,
             },
         )
-        assert "GA105" in _ids(validate_rules([r1, r2]))
+        assert_lint(validate_rules([r1, r2]), "GA105")
 
     def test_ga105_single_rule_no_warning(self):
         r1 = _rule(
@@ -1575,7 +1634,7 @@ class TestCrossRuleAnalysis:
                 "enforce_on_key": "IP",
             },
         )
-        assert "GA105" not in _ids(validate_rules([r1]))
+        assert_no_lint(validate_rules([r1]), "GA105")
 
     def test_ga105_no_enforce_on_key_no_warning(self):
         r1 = _rule(
@@ -1596,7 +1655,7 @@ class TestCrossRuleAnalysis:
                 "rate_limit_threshold": {"count": 50, "interval_sec": 60},
             },
         )
-        assert "GA105" not in _ids(validate_rules([r1, r2]))
+        assert_no_lint(validate_rules([r1, r2]), "GA105")
 
     # --- GA108: Duplicate preconfigured WAF rule set ---
 
@@ -1609,7 +1668,7 @@ class TestCrossRuleAnalysis:
             ref="200",
             match={"expr": {"expression": "evaluatePreconfiguredWaf('sqli-v33-stable')"}},
         )
-        assert "GA108" in _ids(validate_rules([r1, r2]))
+        assert_lint(validate_rules([r1, r2]), "GA108")
 
     def test_ga108_different_waf_rulesets_ok(self):
         r1 = _rule(
@@ -1620,14 +1679,14 @@ class TestCrossRuleAnalysis:
             ref="200",
             match={"expr": {"expression": "evaluatePreconfiguredWaf('xss-v33-stable')"}},
         )
-        assert "GA108" not in _ids(validate_rules([r1, r2]))
+        assert_no_lint(validate_rules([r1, r2]), "GA108")
 
     def test_ga108_single_rule_no_warning(self):
         r1 = _rule(
             ref="100",
             match={"expr": {"expression": "evaluatePreconfiguredWaf('sqli-v33-stable')"}},
         )
-        assert "GA108" not in _ids(validate_rules([r1]))
+        assert_no_lint(validate_rules([r1]), "GA108")
 
     def test_ga108_expr_variant(self):
         """evaluatePreconfiguredExpr also tracked."""
@@ -1639,7 +1698,7 @@ class TestCrossRuleAnalysis:
             ref="200",
             match={"expr": {"expression": "evaluatePreconfiguredExpr('xss-v33-stable')"}},
         )
-        assert "GA108" in _ids(validate_rules([r1, r2]))
+        assert_lint(validate_rules([r1, r2]), "GA108")
 
 
 # ---------------------------------------------------------------------------
@@ -1648,23 +1707,23 @@ class TestCrossRuleAnalysis:
 class TestPreview:
     def test_ga600_preview_true(self):
         r = _rule(preview=True)
-        assert "GA600" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA600")
 
     def test_ga600_preview_false(self):
         r = _rule(preview=False)
-        assert "GA600" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA600")
 
     def test_ga600_no_preview_key(self):
-        assert "GA600" not in _ids(validate_rules([_rule()]))
+        assert_no_lint(validate_rules([_rule()]), "GA600")
 
     def test_ga600_preview_none(self):
         r = _rule(preview=None)
-        assert "GA600" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA600")
 
     def test_ga600_preview_truthy_string_not_flagged(self):
         """Only boolean True triggers GA600, not truthy strings."""
         r = _rule(preview="yes")
-        assert "GA600" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA600")
 
     def test_ga600_severity_is_info(self):
         from octorules.linter.engine import Severity
@@ -1687,37 +1746,37 @@ class TestPreview:
 class TestAlwaysTrue:
     def test_ga601_expression_true(self):
         match = {"expr": {"expression": "true"}}
-        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA601")
 
     def test_ga601_expression_true_uppercase(self):
         match = {"expr": {"expression": "TRUE"}}
-        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA601")
 
     def test_ga601_expression_true_whitespace(self):
         match = {"expr": {"expression": "  true  "}}
-        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA601")
 
     def test_ga601_expression_true_parenthesized(self):
         match = {"expr": {"expression": "((true))"}}
-        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA601")
 
     def test_ga601_normal_expression_not_flagged(self):
         match = {"expr": {"expression": "origin.region_code == 'US'"}}
-        assert "GA601" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA601")
 
     def test_ga601_src_ip_ranges_wildcard(self):
         match = {
             "versioned_expr": "SRC_IPS_V1",
             "config": {"src_ip_ranges": ["*"]},
         }
-        assert "GA601" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA601")
 
     def test_ga601_src_ip_ranges_non_wildcard(self):
         match = {
             "versioned_expr": "SRC_IPS_V1",
             "config": {"src_ip_ranges": ["8.8.8.0/24"]},
         }
-        assert "GA601" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA601")
 
     def test_ga601_src_ip_ranges_wildcard_wrong_versioned_expr(self):
         """Only SRC_IPS_V1 with ['*'] triggers GA601."""
@@ -1725,7 +1784,7 @@ class TestAlwaysTrue:
             "versioned_expr": "BOGUS",
             "config": {"src_ip_ranges": ["*"]},
         }
-        assert "GA601" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA601")
 
     def test_ga601_severity_is_warning(self):
         from octorules.linter.engine import Severity
@@ -1757,27 +1816,27 @@ class TestAlwaysTrue:
 class TestAlwaysFalse:
     def test_ga602_expression_false(self):
         match = {"expr": {"expression": "false"}}
-        assert "GA602" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA602")
 
     def test_ga602_expression_false_uppercase(self):
         match = {"expr": {"expression": "FALSE"}}
-        assert "GA602" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA602")
 
     def test_ga602_expression_false_whitespace(self):
         match = {"expr": {"expression": "  false  "}}
-        assert "GA602" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA602")
 
     def test_ga602_expression_false_parenthesized(self):
         match = {"expr": {"expression": "((false))"}}
-        assert "GA602" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA602")
 
     def test_ga602_normal_expression_not_flagged(self):
         match = {"expr": {"expression": "origin.region_code == 'US'"}}
-        assert "GA602" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA602")
 
     def test_ga602_true_not_flagged(self):
         match = {"expr": {"expression": "true"}}
-        assert "GA602" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA602")
 
     def test_ga602_severity_is_warning(self):
         from octorules.linter.engine import Severity
@@ -1796,10 +1855,49 @@ class TestAlwaysFalse:
     def test_ga602_empty_expression_not_flagged(self):
         """Empty expression is GA314, not GA602."""
         match = {"expr": {"expression": ""}}
-        assert "GA602" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA602")
 
     def test_ga602_match_not_dict_no_crash(self):
-        assert "GA602" not in _ids(validate_rules([_rule(match="invalid")]))
+        assert_no_lint(validate_rules([_rule(match="invalid")]), "GA602")
+
+
+# ---------------------------------------------------------------------------
+# GA603  Rule is disabled (enabled: false)
+# ---------------------------------------------------------------------------
+class TestDisabled:
+    def test_ga603_enabled_false(self):
+        r = _rule(enabled=False)
+        assert_lint(validate_rules([r]), "GA603")
+
+    def test_ga603_enabled_true(self):
+        r = _rule(enabled=True)
+        assert_no_lint(validate_rules([r]), "GA603")
+
+    def test_ga603_no_enabled_key(self):
+        assert_no_lint(validate_rules([_rule()]), "GA603")
+
+    def test_ga603_enabled_none(self):
+        r = _rule(enabled=None)
+        assert_no_lint(validate_rules([r]), "GA603")
+
+    def test_ga603_enabled_zero_not_flagged(self):
+        """Only boolean False triggers GA603, not falsy values like 0."""
+        r = _rule(enabled=0)
+        assert_no_lint(validate_rules([r]), "GA603")
+
+    def test_ga603_severity_is_info(self):
+        from octorules.linter.engine import Severity
+
+        r = _rule(enabled=False)
+        results = validate_rules([r])
+        ga603 = [x for x in results if x.rule_id == "GA603"]
+        assert ga603[0].severity == Severity.INFO
+
+    def test_ga603_field_set(self):
+        r = _rule(enabled=False)
+        results = validate_rules([r])
+        ga603 = [x for x in results if x.rule_id == "GA603"]
+        assert ga603[0].field == "enabled"
 
 
 # ---------------------------------------------------------------------------
@@ -1815,66 +1913,66 @@ class TestEdgeCases:
 
     def test_match_not_dict_no_crash(self):
         results = validate_rules([_rule(match="invalid")])
-        assert "GA300" not in _ids(results)
+        assert_no_lint(results, "GA300")
 
     def test_config_not_dict_no_crash(self):
         match = {"config": "invalid", "versioned_expr": "SRC_IPS_V1"}
         results = validate_rules([_rule(match=match)])
-        assert "GA301" not in _ids(results)
+        assert_no_lint(results, "GA301")
 
     def test_expr_not_dict_no_crash(self):
         match = {"expr": "invalid"}
         results = validate_rules([_rule(match=match)])
-        assert "GA302" not in _ids(results)
+        assert_no_lint(results, "GA302")
 
     def test_match_none_triggers_ga003(self):
         r = _rule()
         r["match"] = None
-        assert "GA003" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA003")
 
     def test_rate_limit_options_not_dict_no_crash(self):
         r = _rule(action="throttle", rate_limit_options="invalid")
         results = validate_rules([r])
-        assert "GA403" not in _ids(results)
+        assert_no_lint(results, "GA403")
 
     def test_deep_checks_skip_when_match_not_dict(self):
         results = validate_rules([_rule(match="invalid")])
-        assert "GA312" not in _ids(results)
-        assert "GA313" not in _ids(results)
-        assert "GA314" not in _ids(results)
-        assert "GA310" not in _ids(results)
-        assert "GA311" not in _ids(results)
+        assert_no_lint(results, "GA312")
+        assert_no_lint(results, "GA313")
+        assert_no_lint(results, "GA314")
+        assert_no_lint(results, "GA310")
+        assert_no_lint(results, "GA311")
 
     def test_deep_checks_skip_when_match_none(self):
         r = _rule()
         r["match"] = None
         results = validate_rules([r])
-        assert "GA312" not in _ids(results)
+        assert_no_lint(results, "GA312")
 
     def test_rate_limit_deep_skip_when_options_not_dict(self):
         r = _rule(action="throttle", rate_limit_options="invalid")
         results = validate_rules([r])
-        assert "GA420" not in _ids(results)
-        assert "GA421" not in _ids(results)
-        assert "GA423" not in _ids(results)
+        assert_no_lint(results, "GA420")
+        assert_no_lint(results, "GA421")
+        assert_no_lint(results, "GA423")
 
     def test_action_params_skip_when_options_not_dict(self):
         r = _rule(action="throttle", rate_limit_options=42)
         results = validate_rules([r])
-        assert "GA429" not in _ids(results)
-        assert "GA431" not in _ids(results)
-        assert "GA432" not in _ids(results)
+        assert_no_lint(results, "GA429")
+        assert_no_lint(results, "GA431")
+        assert_no_lint(results, "GA432")
 
     def test_ga310_no_crash_on_non_string_expression(self):
         """expression not a string should not crash the deep match check."""
         match = {"expr": {"expression": 42}}
         results = validate_rules([_rule(match=match)])
-        assert "GA310" not in _ids(results)
+        assert_no_lint(results, "GA310")
 
     def test_ga314_expression_not_string_no_crash(self):
         match = {"expr": {"expression": None}}
         results = validate_rules([_rule(match=match)])
-        assert "GA314" not in _ids(results)
+        assert_no_lint(results, "GA314")
 
 
 # ---------------------------------------------------------------------------
@@ -1886,35 +1984,35 @@ class TestGA409:
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": "/relative/path"},
         )
-        assert "GA409" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA409")
 
     def test_ga409_external_302_ftp_url(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": "ftp://example.com"},
         )
-        assert "GA409" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA409")
 
     def test_ga409_external_302_https_ok(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": "https://example.com"},
         )
-        assert "GA409" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA409")
 
     def test_ga409_external_302_http_ok(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": "http://example.com"},
         )
-        assert "GA409" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA409")
 
     def test_ga409_recaptcha_no_target_check(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "GOOGLE_RECAPTCHA"},
         )
-        assert "GA409" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA409")
 
 
 # ---------------------------------------------------------------------------
@@ -1927,7 +2025,7 @@ class TestGA433:
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": long_url},
         )
-        assert "GA433" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA433")
 
     def test_ga433_url_at_limit(self):
         url = "https://example.com/" + "a" * 1004  # exactly 1024
@@ -1935,14 +2033,14 @@ class TestGA433:
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": url},
         )
-        assert "GA433" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA433")
 
     def test_ga433_short_url_ok(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": "https://example.com/short"},
         )
-        assert "GA433" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA433")
 
 
 # ---------------------------------------------------------------------------
@@ -1965,7 +2063,7 @@ class TestGA410:
 
     def test_ga410_valid_ban_threshold(self):
         r = self._ban_rule_with_bt(count=5, interval_sec=60)
-        assert "GA410" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA410")
 
     def test_ga410_not_dict(self):
         r = _rule(
@@ -1978,7 +2076,7 @@ class TestGA410:
                 "ban_duration_sec": 120,
             },
         )
-        assert "GA410" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA410")
 
     def test_ga410_missing_count(self):
         r = _rule(
@@ -1997,19 +2095,19 @@ class TestGA410:
 
     def test_ga410_count_zero(self):
         r = self._ban_rule_with_bt(count=0)
-        assert "GA410" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA410")
 
     def test_ga410_count_negative(self):
         r = self._ban_rule_with_bt(count=-1)
-        assert "GA410" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA410")
 
     def test_ga410_count_bool(self):
         r = self._ban_rule_with_bt(count=True)
-        assert "GA410" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA410")
 
     def test_ga410_invalid_interval(self):
         r = self._ban_rule_with_bt(interval_sec=45)
-        assert "GA410" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA410")
 
     def test_ga410_missing_interval(self):
         r = _rule(
@@ -2041,7 +2139,7 @@ class TestGA411:
                 "exceed_redirect_options": {"type": "INVALID", "target": "https://x.com"},
             },
         )
-        assert "GA411" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA411")
 
     def test_ga411_valid_external_302(self):
         r = _rule(
@@ -2053,7 +2151,7 @@ class TestGA411:
                 "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
             },
         )
-        assert "GA411" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA411")
 
     def test_ga411_valid_recaptcha(self):
         r = _rule(
@@ -2065,7 +2163,7 @@ class TestGA411:
                 "exceed_redirect_options": {"type": "GOOGLE_RECAPTCHA"},
             },
         )
-        assert "GA411" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA411")
 
 
 # ---------------------------------------------------------------------------
@@ -2082,7 +2180,7 @@ class TestGA412:
                 "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "/relative"},
             },
         )
-        assert "GA412" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA412")
 
     def test_ga412_valid_url(self):
         r = _rule(
@@ -2094,7 +2192,7 @@ class TestGA412:
                 "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "https://x.com"},
             },
         )
-        assert "GA412" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA412")
 
     def test_ga412_recaptcha_no_url_check(self):
         r = _rule(
@@ -2106,7 +2204,7 @@ class TestGA412:
                 "exceed_redirect_options": {"type": "GOOGLE_RECAPTCHA"},
             },
         )
-        assert "GA412" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA412")
 
 
 # ---------------------------------------------------------------------------
@@ -2115,11 +2213,11 @@ class TestGA412:
 class TestGA413:
     def test_ga413_invalid_regex(self):
         match = {"expr": {"expression": "request.path.matches('[invalid')"}}
-        assert "GA413" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA413")
 
     def test_ga413_valid_regex(self):
         match = {"expr": {"expression": "request.path.matches('.*api.*')"}}
-        assert "GA413" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA413")
 
     def test_ga413_multiple_matches_one_bad(self):
         expr = "request.path.matches('.*api.*') && request.query.matches('[bad')"
@@ -2130,7 +2228,7 @@ class TestGA413:
 
     def test_ga413_no_matches_call(self):
         match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
-        assert "GA413" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA413")
 
 
 # ---------------------------------------------------------------------------
@@ -2150,11 +2248,11 @@ class TestGA414:
     def test_ga414_valid_configs(self):
         configs = [{"enforce_on_key_type": "IP"}]
         r = self._rl_rule_with_configs(configs)
-        assert "GA414" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA414")
 
     def test_ga414_not_list(self):
         r = self._rl_rule_with_configs("invalid")
-        assert "GA414" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA414")
 
     def test_ga414_too_many_entries(self):
         configs = [
@@ -2164,22 +2262,22 @@ class TestGA414:
             {"enforce_on_key_type": "XFF_IP"},
         ]
         r = self._rl_rule_with_configs(configs)
-        assert "GA414" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA414")
 
     def test_ga414_entry_not_dict(self):
         configs = ["invalid"]
         r = self._rl_rule_with_configs(configs)
-        assert "GA414" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA414")
 
     def test_ga414_entry_missing_type(self):
         configs = [{"enforce_on_key_name": "X-Foo"}]
         r = self._rl_rule_with_configs(configs)
-        assert "GA414" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA414")
 
     def test_ga414_mutually_exclusive_with_enforce_on_key(self):
         configs = [{"enforce_on_key_type": "IP"}]
         r = self._rl_rule_with_configs(configs, enforce_on_key="IP")
-        assert "GA414" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA414")
 
     def test_ga414_three_entries_ok(self):
         configs = [
@@ -2188,7 +2286,7 @@ class TestGA414:
             {"enforce_on_key_type": "HTTP_COOKIE", "enforce_on_key_name": "c"},
         ]
         r = self._rl_rule_with_configs(configs)
-        assert "GA414" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA414")
 
 
 # ---------------------------------------------------------------------------
@@ -2210,7 +2308,7 @@ class TestGA415:
             {"enforce_on_key_type": "IP"},
         ]
         r = self._rl_rule_with_configs(configs)
-        assert "GA415" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA415")
 
     def test_ga415_no_duplicates(self):
         configs = [
@@ -2218,12 +2316,12 @@ class TestGA415:
             {"enforce_on_key_type": "XFF_IP"},
         ]
         r = self._rl_rule_with_configs(configs)
-        assert "GA415" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA415")
 
     def test_ga415_single_entry_no_warning(self):
         configs = [{"enforce_on_key_type": "IP"}]
         r = self._rl_rule_with_configs(configs)
-        assert "GA415" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA415")
 
 
 # ---------------------------------------------------------------------------
@@ -2233,27 +2331,27 @@ class TestGA416:
     def test_ga416_sensitivity_too_high(self):
         expr = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 5})"
         match = {"expr": {"expression": expr}}
-        assert "GA416" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA416")
 
     def test_ga416_sensitivity_valid_4(self):
         expr = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 4})"
         match = {"expr": {"expression": expr}}
-        assert "GA416" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA416")
 
     def test_ga416_sensitivity_valid_0(self):
         expr = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 0})"
         match = {"expr": {"expression": expr}}
-        assert "GA416" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA416")
 
     def test_ga416_no_sensitivity(self):
         expr = "evaluatePreconfiguredWaf('sqli-v33-stable')"
         match = {"expr": {"expression": expr}}
-        assert "GA416" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA416")
 
     def test_ga416_preconfigured_expr_variant(self):
         expr = "evaluatePreconfiguredExpr('xss-v33-stable', {'sensitivity': 9})"
         match = {"expr": {"expression": expr}}
-        assert "GA416" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA416")
 
     def test_ga416_sensitivity_with_nested_dict(self):
         expr = (
@@ -2261,7 +2359,7 @@ class TestGA416:
             " {'sensitivity': 5, 'opt_out_rule_ids': ['rule1']})"
         )
         match = {"expr": {"expression": expr}}
-        assert "GA416" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA416")
 
     def test_ga416_sensitivity_with_nested_dict_valid(self):
         expr = (
@@ -2269,7 +2367,7 @@ class TestGA416:
             " {'sensitivity': 3, 'opt_out_rule_ids': ['rule1']})"
         )
         match = {"expr": {"expression": expr}}
-        assert "GA416" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA416")
 
 
 # ---------------------------------------------------------------------------
@@ -2278,15 +2376,15 @@ class TestGA416:
 class TestGA418:
     def test_ga418_valid_header(self):
         match = {"expr": {"expression": "request.headers['X-Custom-Header'] == 'v'"}}
-        assert "GA418" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA418")
 
     def test_ga418_invalid_header_space(self):
         match = {"expr": {"expression": 'request.headers["Bad Header"] == "v"'}}
-        assert "GA418" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA418")
 
     def test_ga418_invalid_header_paren(self):
         match = {"expr": {"expression": 'request.headers["X-Bad(Header)"] == "v"'}}
-        assert "GA418" in _ids(validate_rules([_rule(match=match)]))
+        assert_lint(validate_rules([_rule(match=match)]), "GA418")
 
     def test_ga418_deduped(self):
         expr = 'request.headers["Bad Header"] == "a" || request.headers["Bad Header"] == "b"'
@@ -2297,7 +2395,7 @@ class TestGA418:
 
     def test_ga418_double_quoted(self):
         match = {"expr": {"expression": 'request.headers["Content-Type"] == "text/html"'}}
-        assert "GA418" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA418")
 
 
 # ---------------------------------------------------------------------------
@@ -2309,21 +2407,21 @@ class TestGA419:
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": ""},
         )
-        assert "GA419" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA419")
 
     def test_ga419_whitespace_redirect_target(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": "   "},
         )
-        assert "GA419" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA419")
 
     def test_ga419_non_empty_ok(self):
         r = _rule(
             action="redirect",
             redirect_options={"type": "EXTERNAL_302", "target": "https://example.com"},
         )
-        assert "GA419" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA419")
 
     def test_ga419_exceed_redirect_empty_target(self):
         r = _rule(
@@ -2335,7 +2433,7 @@ class TestGA419:
                 "exceed_redirect_options": {"type": "EXTERNAL_302", "target": ""},
             },
         )
-        assert "GA419" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA419")
 
     def test_ga419_exceed_redirect_whitespace_target(self):
         r = _rule(
@@ -2347,7 +2445,7 @@ class TestGA419:
                 "exceed_redirect_options": {"type": "EXTERNAL_302", "target": "  "},
             },
         )
-        assert "GA419" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA419")
 
 
 # ---------------------------------------------------------------------------
@@ -2356,11 +2454,11 @@ class TestGA419:
 class TestGA315:
     def test_ga315_valid_country_code(self):
         match = {"expr": {"expression": "origin.region_code == 'US'"}}
-        assert "GA315" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA315")
 
     def test_ga315_valid_country_code_double_quote(self):
         match = {"expr": {"expression": 'origin.region_code == "DE"'}}
-        assert "GA315" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA315")
 
     def test_ga315_lowercase_warning(self):
         match = {"expr": {"expression": "origin.region_code == 'us'"}}
@@ -2385,7 +2483,7 @@ class TestGA315:
 
     def test_ga315_in_list_all_valid(self):
         match = {"expr": {"expression": 'origin.region_code in ["US", "CA", "GB"]'}}
-        assert "GA315" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA315")
 
     def test_ga315_in_list_one_bad(self):
         match = {"expr": {"expression": 'origin.region_code in ["US", "XYZ"]'}}
@@ -2402,7 +2500,7 @@ class TestGA315:
 
     def test_ga315_no_region_code_no_warning(self):
         match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
-        assert "GA315" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA315")
 
     def test_ga315_deduped(self):
         match = {"expr": {"expression": "origin.region_code == 'us' || origin.region_code == 'us'"}}
@@ -2417,7 +2515,7 @@ class TestGA315:
 class TestGA316:
     def test_ga316_valid_method(self):
         match = {"expr": {"expression": "request.method == 'GET'"}}
-        assert "GA316" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA316")
 
     @pytest.mark.parametrize(
         "method",
@@ -2425,7 +2523,7 @@ class TestGA316:
     )
     def test_ga316_all_valid_methods(self, method):
         match = {"expr": {"expression": f"request.method == '{method}'"}}
-        assert "GA316" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA316")
 
     def test_ga316_typo_gett(self):
         match = {"expr": {"expression": "request.method == 'GETT'"}}
@@ -2437,11 +2535,11 @@ class TestGA316:
     def test_ga316_unknown_method(self):
         match = {"expr": {"expression": "request.method == 'PURGE'"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA316" in _ids(results)
+        assert_lint(results, "GA316")
 
     def test_ga316_in_list_valid(self):
         match = {"expr": {"expression": 'request.method in ["GET", "POST"]'}}
-        assert "GA316" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA316")
 
     def test_ga316_in_list_one_bad(self):
         match = {"expr": {"expression": 'request.method in ["GET", "POSTT"]'}}
@@ -2458,7 +2556,7 @@ class TestGA316:
 
     def test_ga316_no_method_comparison_no_warning(self):
         match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
-        assert "GA316" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA316")
 
 
 # ---------------------------------------------------------------------------
@@ -2467,11 +2565,11 @@ class TestGA316:
 class TestGA317:
     def test_ga317_valid_cidr(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '1.2.3.0/24')"}}
-        assert "GA317" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA317")
 
     def test_ga317_valid_ipv6_cidr(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '2001:db8::/32')"}}
-        assert "GA317" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA317")
 
     def test_ga317_invalid_cidr(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, 'not-a-cidr')"}}
@@ -2488,46 +2586,46 @@ class TestGA317:
     def test_ga320_private_range(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '192.168.1.0/24')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA320" in _ids(results)
+        assert_lint(results, "GA320")
 
     def test_ga320_loopback(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '127.0.0.1/32')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA320" in _ids(results)
+        assert_lint(results, "GA320")
 
     def test_ga320_rfc1918_10(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '10.0.0.0/8')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA320" in _ids(results)
+        assert_lint(results, "GA320")
 
     def test_ga320_public_no_warning(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, '8.8.8.0/24')"}}
-        assert "GA320" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA320")
 
     def test_ga320_ipv6_ula(self):
         match = {"expr": {"expression": "inIpRange(origin.ip, 'fd00::/8')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA320" in _ids(results)
+        assert_lint(results, "GA320")
 
     def test_ga320_cgnat(self):
         """CGNAT range should be flagged in inIpRange expressions."""
         match = {"expr": {"expression": "inIpRange(origin.ip, '100.64.1.1/32')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA320" in _ids(results)
+        assert_lint(results, "GA320")
 
     def test_ga320_documentation_rfc5737(self):
         """RFC 5737 documentation range should be flagged."""
         match = {"expr": {"expression": "inIpRange(origin.ip, '198.51.100.0/24')"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA320" in _ids(results)
+        assert_lint(results, "GA320")
 
     def test_ga317_double_quoted(self):
         match = {"expr": {"expression": 'inIpRange(origin.ip, "8.8.8.0/24")'}}
-        assert "GA317" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA317")
 
     def test_ga317_user_ip(self):
         match = {"expr": {"expression": "inIpRange(origin.user_ip, '1.2.3.0/24')"}}
-        assert "GA317" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA317")
 
 
 # ---------------------------------------------------------------------------
@@ -2552,25 +2650,25 @@ class TestGA318:
 
     def test_ga318_string_field_with_string_ok(self):
         match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
-        assert "GA318" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA318")
 
     def test_ga318_int_field_with_int_ok(self):
         match = {"expr": {"expression": "origin.asn == 15169"}}
-        assert "GA318" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA318")
 
     def test_ga318_request_method_with_int(self):
         match = {"expr": {"expression": "request.method == 42"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA318" in _ids(results)
+        assert_lint(results, "GA318")
 
     def test_ga318_origin_region_code_with_int(self):
         match = {"expr": {"expression": "origin.region_code == 42"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA318" in _ids(results)
+        assert_lint(results, "GA318")
 
     def test_ga318_unknown_field_no_warning(self):
         match = {"expr": {"expression": "custom.field == 42"}}
-        assert "GA318" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA318")
 
     def test_ga318_deduped(self):
         match = {"expr": {"expression": "origin.ip == 42 || origin.ip == 42"}}
@@ -2582,12 +2680,12 @@ class TestGA318:
         """origin.asn > 'string' is a type mismatch."""
         match = {"expr": {"expression": "origin.asn > '100'"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA318" in _ids(results)
+        assert_lint(results, "GA318")
 
     def test_ga318_request_path_with_int(self):
         match = {"expr": {"expression": "request.path == 42"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA318" in _ids(results)
+        assert_lint(results, "GA318")
 
 
 # ---------------------------------------------------------------------------
@@ -2597,36 +2695,36 @@ class TestGA319:
     def test_ga319_mixed_case_path(self):
         match = {"expr": {"expression": "request.path == '/Admin'"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA319" in _ids(results)
+        assert_lint(results, "GA319")
 
     def test_ga319_all_lowercase_path_no_warning(self):
         match = {"expr": {"expression": "request.path == '/admin'"}}
-        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA319")
 
     def test_ga319_all_uppercase_path_no_warning(self):
         match = {"expr": {"expression": "request.path == '/ADMIN'"}}
-        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA319")
 
     def test_ga319_mixed_case_host(self):
         match = {"expr": {"expression": "request.host == 'Example.COM'"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA319" in _ids(results)
-        assert "GA310" not in _ids(results)
+        assert_lint(results, "GA319")
+        assert_no_lint(results, "GA310")
 
     def test_ga319_mixed_case_query(self):
         match = {"expr": {"expression": "request.query == 'fooBar'"}}
         results = validate_rules([_rule(match=match)])
-        assert "GA319" in _ids(results)
+        assert_lint(results, "GA319")
 
     def test_ga319_method_no_warning(self):
         """request.method is always uppercase — don't warn."""
         match = {"expr": {"expression": "request.method == 'Get'"}}
-        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA319")
 
     def test_ga319_region_code_no_warning(self):
         """origin.region_code is always uppercase — don't warn."""
         match = {"expr": {"expression": "origin.region_code == 'Us'"}}
-        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA319")
 
     def test_ga319_severity_is_info(self):
         from octorules.linter.engine import Severity
@@ -2645,7 +2743,7 @@ class TestGA319:
     def test_ga319_slash_only_no_warning(self):
         """All-lowercase path should not trigger."""
         match = {"expr": {"expression": "request.path == '/'"}}
-        assert "GA319" not in _ids(validate_rules([_rule(match=match)]))
+        assert_no_lint(validate_rules([_rule(match=match)]), "GA319")
 
 
 # ---------------------------------------------------------------------------
@@ -2656,14 +2754,14 @@ class TestGA502:
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(256)]
-        assert "GA502" not in _ids(validate_rule_count(rules, plan_tier="standard"))
+        assert_no_lint(validate_rule_count(rules, plan_tier="standard"), "GA502")
 
     def test_ga502_standard_over_limit(self):
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(257)]
         results = validate_rule_count(rules, plan_tier="standard")
-        assert "GA502" in _ids(results)
+        assert_lint(results, "GA502")
         assert "257" in results[0].message
         assert "256" in results[0].message
 
@@ -2672,44 +2770,44 @@ class TestGA502:
 
         rules = [_rule(ref=str(i)) for i in range(513)]
         results = validate_rule_count(rules, plan_tier="plus")
-        assert "GA502" in _ids(results)
+        assert_lint(results, "GA502")
 
     def test_ga502_plus_at_limit(self):
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(512)]
-        assert "GA502" not in _ids(validate_rule_count(rules, plan_tier="plus"))
+        assert_no_lint(validate_rule_count(rules, plan_tier="plus"), "GA502")
 
     def test_ga502_enterprise_over_limit(self):
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(1025)]
         results = validate_rule_count(rules, plan_tier="enterprise")
-        assert "GA502" in _ids(results)
+        assert_lint(results, "GA502")
 
     def test_ga502_enterprise_at_limit(self):
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(1024)]
-        assert "GA502" not in _ids(validate_rule_count(rules, plan_tier="enterprise"))
+        assert_no_lint(validate_rule_count(rules, plan_tier="enterprise"), "GA502")
 
     def test_ga502_enterprise_default(self):
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(100)]
-        assert "GA502" not in _ids(validate_rule_count(rules))
+        assert_no_lint(validate_rule_count(rules), "GA502")
 
     def test_ga502_unknown_tier_no_crash(self):
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(2000)]
-        assert "GA502" not in _ids(validate_rule_count(rules, plan_tier="unknown"))
+        assert_no_lint(validate_rule_count(rules, plan_tier="unknown"), "GA502")
 
     def test_ga502_case_insensitive_tier(self):
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(257)]
-        assert "GA502" in _ids(validate_rule_count(rules, plan_tier="Standard"))
+        assert_lint(validate_rule_count(rules, plan_tier="Standard"), "GA502")
 
     def test_ga502_phase_passed_through(self):
         from octorules_google.validate import validate_rule_count
@@ -2738,14 +2836,14 @@ class TestGA501:
         from octorules_google.validate import validate_regex_rule_count
 
         rules = [self._regex_rule(str(i)) for i in range(10)]
-        assert "GA501" not in _ids(validate_regex_rule_count(rules))
+        assert_no_lint(validate_regex_rule_count(rules), "GA501")
 
     def test_ga501_over_limit(self):
         from octorules_google.validate import validate_regex_rule_count
 
         rules = [self._regex_rule(str(i)) for i in range(11)]
         results = validate_regex_rule_count(rules)
-        assert "GA501" in _ids(results)
+        assert_lint(results, "GA501")
         assert "11" in results[0].message
         assert "10" in results[0].message
 
@@ -2753,7 +2851,7 @@ class TestGA501:
         from octorules_google.validate import validate_regex_rule_count
 
         rules = [self._regex_rule(str(i)) for i in range(10)]
-        assert "GA501" not in _ids(validate_regex_rule_count(rules))
+        assert_no_lint(validate_regex_rule_count(rules), "GA501")
 
     def test_ga501_mixed_rules(self):
         """Only rules with matches() count toward the limit."""
@@ -2761,7 +2859,7 @@ class TestGA501:
 
         regex_rules = [self._regex_rule(str(i)) for i in range(8)]
         plain_rules = [self._plain_rule(str(i + 100)) for i in range(20)]
-        assert "GA501" not in _ids(validate_regex_rule_count(regex_rules + plain_rules))
+        assert_no_lint(validate_regex_rule_count(regex_rules + plain_rules), "GA501")
 
     def test_ga501_mixed_over_limit(self):
         from octorules_google.validate import validate_regex_rule_count
@@ -2769,14 +2867,14 @@ class TestGA501:
         regex_rules = [self._regex_rule(str(i)) for i in range(11)]
         plain_rules = [self._plain_rule(str(i + 100)) for i in range(5)]
         results = validate_regex_rule_count(regex_rules + plain_rules)
-        assert "GA501" in _ids(results)
+        assert_lint(results, "GA501")
 
     def test_ga501_non_regex_not_counted(self):
         """Rules without matches() in expression are not regex rules."""
         from octorules_google.validate import validate_regex_rule_count
 
         rules = [self._plain_rule(str(i)) for i in range(50)]
-        assert "GA501" not in _ids(validate_regex_rule_count(rules))
+        assert_no_lint(validate_regex_rule_count(rules), "GA501")
 
     def test_ga501_versioned_expr_not_counted(self):
         """Rules using versioned_expr (SRC_IPS_V1) are not regex rules."""
@@ -2792,7 +2890,7 @@ class TestGA501:
             )
             for i in range(15)
         ]
-        assert "GA501" not in _ids(validate_regex_rule_count(rules))
+        assert_no_lint(validate_regex_rule_count(rules), "GA501")
 
     def test_ga501_severity_is_warning(self):
         from octorules.linter.engine import Severity
@@ -2821,7 +2919,7 @@ class TestGA501:
             )
             for i in range(11)
         ]
-        assert "GA501" in _ids(validate_regex_rule_count(rules))
+        assert_lint(validate_regex_rule_count(rules), "GA501")
 
     def test_ga501_expr_as_string(self):
         """Handle expr as a plain string (shorthand form)."""
@@ -2834,7 +2932,7 @@ class TestGA501:
             )
             for i in range(11)
         ]
-        assert "GA501" in _ids(validate_regex_rule_count(rules))
+        assert_lint(validate_regex_rule_count(rules), "GA501")
 
 
 class TestResultFactory:
@@ -3238,7 +3336,7 @@ class TestDeadRulesExtended:
                 match={"expr": {"expression": "origin.region_code == 'CN'"}},
             ),
         ]
-        assert "GA103" in _ids(validate_rules(rules))
+        assert_lint(validate_rules(rules), "GA103")
 
     def test_ga103_deeply_parenthesized_true(self):
         """Rules after (((true))) match-all are unreachable."""
@@ -3250,7 +3348,7 @@ class TestDeadRulesExtended:
                 match={"expr": {"expression": "origin.ip == '1.2.3.4'"}},
             ),
         ]
-        assert "GA103" in _ids(validate_rules(rules))
+        assert_lint(validate_rules(rules), "GA103")
 
     def test_ga103_ip_wildcard_match_all(self):
         """Rules after SRC_IPS_V1 with ['*'] are unreachable."""
@@ -3269,7 +3367,7 @@ class TestDeadRulesExtended:
                 match={"expr": {"expression": "origin.region_code == 'CN'"}},
             ),
         ]
-        assert "GA103" in _ids(validate_rules(rules))
+        assert_lint(validate_rules(rules), "GA103")
 
     def test_ga103_ip_wildcard_non_wildcard_not_flagged(self):
         """SRC_IPS_V1 with specific IPs is not a match-all."""
@@ -3288,7 +3386,7 @@ class TestDeadRulesExtended:
                 match={"expr": {"expression": "origin.region_code == 'US'"}},
             ),
         ]
-        assert "GA103" not in _ids(validate_rules(rules))
+        assert_no_lint(validate_rules(rules), "GA103")
 
     def test_ga103_lower_priority_before_parenthesized_not_flagged(self):
         """Rules with lower priority than parenthesized match-all are not flagged."""
@@ -3377,13 +3475,13 @@ class TestGA423InConfigs:
     def test_ga423_valid_key_type_in_configs(self):
         configs = [{"enforce_on_key_type": "IP"}]
         r = self._rl_rule_with_configs(configs)
-        assert "GA423" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA423")
 
     def test_ga423_invalid_key_type_in_configs(self):
         configs = [{"enforce_on_key_type": "BOGUS"}]
         r = self._rl_rule_with_configs(configs)
         results = validate_rules([r])
-        assert "GA423" in _ids(results)
+        assert_lint(results, "GA423")
         ga423 = [r for r in results if r.rule_id == "GA423"]
         assert "BOGUS" in ga423[0].message
 
@@ -3406,7 +3504,7 @@ class TestGA423InConfigs:
         for key_type in sorted(_VALID_ENFORCE_ON_KEYS):
             configs = [{"enforce_on_key_type": key_type}]
             r = self._rl_rule_with_configs(configs)
-            assert "GA423" not in _ids(validate_rules([r])), f"{key_type} should be valid"
+            assert_no_lint(validate_rules([r]), "GA423")
 
 
 # ---------------------------------------------------------------------------
@@ -3421,19 +3519,19 @@ class TestGA325:
                 ]
             }
         )
-        assert "GA325" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA325")
 
     def test_ga325_header_action_not_dict(self):
         r = _rule(header_action="invalid")
-        assert "GA325" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA325")
 
     def test_ga325_request_headers_to_adds_not_list(self):
         r = _rule(header_action={"request_headers_to_adds": "invalid"})
-        assert "GA325" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA325")
 
     def test_ga325_entry_not_dict(self):
         r = _rule(header_action={"request_headers_to_adds": ["invalid"]})
-        assert "GA325" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA325")
 
     def test_ga325_entry_missing_header_name(self):
         r = _rule(header_action={"request_headers_to_adds": [{"header_value": "bar"}]})
@@ -3458,12 +3556,12 @@ class TestGA325:
     def test_ga325_no_request_headers_to_adds_ok(self):
         """header_action without request_headers_to_adds is fine."""
         r = _rule(header_action={})
-        assert "GA325" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA325")
 
     def test_ga325_empty_list_ok(self):
         """Empty request_headers_to_adds list is fine."""
         r = _rule(header_action={"request_headers_to_adds": []})
-        assert "GA325" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA325")
 
 
 # ---------------------------------------------------------------------------
@@ -3472,19 +3570,19 @@ class TestGA325:
 class TestGA326:
     def test_ga326_valid_network_match(self):
         r = _rule(network_match={"user_defined_fields": []})
-        assert "GA326" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA326")
 
     def test_ga326_network_match_not_dict(self):
         r = _rule(network_match="invalid")
-        assert "GA326" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA326")
 
     def test_ga326_network_match_list(self):
         r = _rule(network_match=["invalid"])
-        assert "GA326" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA326")
 
     def test_ga326_absent_is_ok(self):
         r = _rule()
-        assert "GA326" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA326")
 
 
 # ---------------------------------------------------------------------------
@@ -3493,19 +3591,19 @@ class TestGA326:
 class TestGA327:
     def test_ga327_valid_config(self):
         r = _rule(preconfigured_waf_config={"exclusions": [{"target_rule_set": "sqli-v33-stable"}]})
-        assert "GA327" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA327")
 
     def test_ga327_config_not_dict(self):
         r = _rule(preconfigured_waf_config="invalid")
-        assert "GA327" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA327")
 
     def test_ga327_exclusions_not_list(self):
         r = _rule(preconfigured_waf_config={"exclusions": "invalid"})
-        assert "GA327" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA327")
 
     def test_ga327_exclusion_not_dict(self):
         r = _rule(preconfigured_waf_config={"exclusions": ["invalid"]})
-        assert "GA327" in _ids(validate_rules([r]))
+        assert_lint(validate_rules([r]), "GA327")
 
     def test_ga327_exclusion_missing_target_rule_set(self):
         r = _rule(preconfigured_waf_config={"exclusions": [{"other": "x"}]})
@@ -3517,12 +3615,12 @@ class TestGA327:
     def test_ga327_no_exclusions_ok(self):
         """preconfigured_waf_config without exclusions is fine."""
         r = _rule(preconfigured_waf_config={})
-        assert "GA327" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA327")
 
     def test_ga327_empty_exclusions_ok(self):
         """Empty exclusions list is fine."""
         r = _rule(preconfigured_waf_config={"exclusions": []})
-        assert "GA327" not in _ids(validate_rules([r]))
+        assert_no_lint(validate_rules([r]), "GA327")
 
     def test_ga327_multiple_exclusions_mixed(self):
         """One valid, one invalid exclusion entry."""
@@ -3546,20 +3644,20 @@ class TestRuleEntryNotDict:
     def test_string_entry(self):
         """Non-dict rule entry produces GA004 error."""
         results = validate_rules(["not a dict"])
-        assert "GA004" in _ids(results)
+        assert_lint(results, "GA004")
 
     def test_int_entry(self):
         results = validate_rules([42])
-        assert "GA004" in _ids(results)
+        assert_lint(results, "GA004")
 
     def test_list_entry(self):
         results = validate_rules([[1, 2, 3]])
-        assert "GA004" in _ids(results)
+        assert_lint(results, "GA004")
 
     def test_mixed_valid_and_invalid(self):
         """Valid dict rules still validated alongside non-dict entries."""
         r = _rule()
         results = validate_rules(["bad", r])
-        assert "GA004" in _ids(results)
+        assert_lint(results, "GA004")
         ga004_count = sum(1 for res in results if res.rule_id == "GA004")
         assert ga004_count == 1

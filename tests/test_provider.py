@@ -1190,9 +1190,11 @@ class TestListZones:
 
     def test_list_zones_success(self, mock_armor_client):
         """Returns list of policy names."""
-        policy_a = MagicMock()
+        from google.cloud import compute_v1
+
+        policy_a = MagicMock(spec=compute_v1.SecurityPolicy)
         policy_a.name = "policy-a"
-        policy_b = MagicMock()
+        policy_b = MagicMock(spec=compute_v1.SecurityPolicy)
         policy_b.name = "policy-b"
         mock_armor_client.list.return_value = [policy_a, policy_b]
         provider = CloudArmorProvider(client=mock_armor_client, project="p")

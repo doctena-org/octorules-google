@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.3] - 2026-04-27
+
+### Added
+- GA603: Flag Cloud Armor rules with `enabled: false` (mirrors CF018, WA600,
+  AZ600, BN602). Severity: INFO. Helps identify disabled rules that may be
+  stale or no longer needed.
+
+### Changed
+- GA305 (overlapping/duplicate CIDRs in `src_ip_ranges`) rewritten from O(n²)
+  pairwise comparison to O(n log n) sweep-line, mirroring CF478 / WA164 /
+  BN307. 1,000-entry lists now lint in well under a second. Catch-all
+  entries (`0.0.0.0/0`, `::/0`) are now excluded from GA305 — they were
+  previously flagged against every other CIDR in the list, producing noise.
+  GA306 still flags catch-all on its own. Each contained or duplicate CIDR
+  is reported once against its immediate parent in sorted order (was: once
+  per pair, so a chain of three nested CIDRs produced three findings; now
+  produces two).
+
 ## [0.9.2] - 2026-04-18
 
 ### Changed

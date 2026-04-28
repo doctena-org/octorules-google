@@ -3,12 +3,13 @@
 from unittest.mock import MagicMock
 
 import pytest
+from google.cloud import compute_v1
 
 
 @pytest.fixture
 def mock_armor_client():
     """Create a mock SecurityPoliciesClient."""
-    return MagicMock()
+    return MagicMock(spec=compute_v1.SecurityPoliciesClient)
 
 
 @pytest.fixture
