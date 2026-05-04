@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-05-04
+
+### Added
+- **GA027** (INFO): Leading/trailing whitespace in `match.expr.expression`.
+- **GA110** (INFO): Negated comparison simplification — `!(a == b)` → `a != b`.
+- **GA111** (INFO): OR chain of equality on the same field — `a == "x" || a == "y" || a == "z"` → `a in ["x", "y", "z"]`.
+- **GA112** (WARNING): Illogical condition — contradictory `&&` (always false) or tautological `||` (always true).
+- **GA113** (INFO): Mixed `&&` and `||` at top paren depth — suggests explicit grouping.
+- **GA328** (WARNING): Overly-permissive regex in CEL `.matches()` (e.g., `.`, `.*`, `^.+$`).
+- **GA329** (INFO): Anchored-literal regex in CEL `.matches()` (`^foo$`) — suggests equality operator instead.
+- **GA526** (INFO): HTTP header name should be lowercase in CEL `request.headers["..."]` bracket access.
+- **GA529** (WARNING): Deprecated `versioned_expr` field — use CEL `match.expr` instead.
+- New module `octorules_google.linter.cel_regex` — CEL expression scanning helpers backing GA328/329 and the GA110-113 family.
+
 ## [0.9.3] - 2026-04-27
 
 ### Added

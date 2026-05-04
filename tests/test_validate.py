@@ -893,68 +893,29 @@ class TestMatchDeep:
         match = {"expr": {"expression": "bogus.field == 'x'"}}
         assert_lint(validate_rules([_rule(match=match)]), "GA310")
 
-    def test_ga310_known_origin_ip(self):
-        match = {"expr": {"expression": "origin.ip == '1.2.3.4'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_request_headers(self):
-        match = {"expr": {"expression": "request.headers['X-Foo'] == 'bar'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_request_method(self):
-        match = {"expr": {"expression": "request.method == 'GET'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_request_path(self):
-        match = {"expr": {"expression": "request.path.startsWith('/api')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_request_scheme(self):
-        match = {"expr": {"expression": "request.scheme == 'https'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_request_query(self):
-        match = {"expr": {"expression": "request.query.contains('foo')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_request_url(self):
-        match = {"expr": {"expression": "request.url.contains('/api')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_origin_region_code(self):
-        match = {"expr": {"expression": "origin.region_code == 'US'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_origin_asn(self):
-        match = {"expr": {"expression": "origin.asn == 15169"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_origin_user_ip(self):
-        match = {"expr": {"expression": "origin.user_ip == '1.2.3.4'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_origin_tls_ja3(self):
-        match = {"expr": {"expression": "origin.tls_ja3_fingerprint == 'abc'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_origin_tls_ja4(self):
-        match = {"expr": {"expression": "origin.tls_ja4_fingerprint == 'abc'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_token_recaptcha_action(self):
-        match = {"expr": {"expression": "token.recaptcha_action.score > 0.5"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_token_recaptcha_session(self):
-        match = {"expr": {"expression": "token.recaptcha_session.score > 0.5"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_token_recaptcha_exemption(self):
-        match = {"expr": {"expression": "token.recaptcha_exemption.valid == true"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
-
-    def test_ga310_known_request_host(self):
-        match = {"expr": {"expression": "request.host == 'example.com'"}}
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "origin.ip == '1.2.3.4'",
+            "request.headers['X-Foo'] == 'bar'",
+            "request.method == 'GET'",
+            "request.path.startsWith('/api')",
+            "request.scheme == 'https'",
+            "request.query.contains('foo')",
+            "request.url.contains('/api')",
+            "origin.region_code == 'US'",
+            "origin.asn == 15169",
+            "origin.user_ip == '1.2.3.4'",
+            "origin.tls_ja3_fingerprint == 'abc'",
+            "origin.tls_ja4_fingerprint == 'abc'",
+            "token.recaptcha_action.score > 0.5",
+            "token.recaptcha_session.score > 0.5",
+            "token.recaptcha_exemption.valid == true",
+            "request.host == 'example.com'",
+        ],
+    )
+    def test_ga310_known_field_does_not_fire(self, expression):
+        match = {"expr": {"expression": expression}}
         assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_multiple_unknown(self):
@@ -980,85 +941,33 @@ class TestMatchDeep:
         match = {"expr": {"expression": "unknownFunc(origin.ip)"}}
         assert_lint(validate_rules([_rule(match=match)]), "GA311")
 
-    def test_ga311_known_contains(self):
-        match = {"expr": {"expression": "request.path.contains('/api')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_startsWith(self):
-        match = {"expr": {"expression": "request.path.startsWith('/api')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_endsWith(self):
-        match = {"expr": {"expression": "request.path.endsWith('.html')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_matches(self):
-        match = {"expr": {"expression": "request.path.matches('.*api.*')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_lower(self):
-        match = {"expr": {"expression": "request.method.lower() == 'get'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_upper(self):
-        match = {"expr": {"expression": "request.method.upper() == 'GET'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_base64Decode(self):
-        match = {"expr": {"expression": "request.headers['auth'].base64Decode() == 'x'"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_inIpRange(self):
-        match = {"expr": {"expression": "inIpRange(origin.ip, '1.0.0.0/8')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_size(self):
-        match = {"expr": {"expression": "size(request.query) > 100"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_int(self):
-        match = {"expr": {"expression": "int(request.headers['x']) > 100"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_evaluatePreconfiguredWaf(self):
-        match = {"expr": {"expression": "evaluatePreconfiguredWaf('sqli-v33-stable')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_evaluatePreconfiguredExpr(self):
-        match = {"expr": {"expression": "evaluatePreconfiguredExpr('xss-v33-stable')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_has(self):
-        match = {"expr": {"expression": "has(request.headers['X-Custom'])"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_evaluateThreatIntelligence(self):
-        match = {"expr": {"expression": "evaluateThreatIntelligence('iplist-known-malicious-ips')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_evaluateThreatIntelligenceWithExcl(self):
-        expr = "evaluateThreatIntelligenceWithExcl('iplist-known-malicious-ips', ['1.2.3.0/24'])"
-        match = {"expr": {"expression": expr}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_evaluateJsonPath(self):
-        match = {"expr": {"expression": "evaluateJsonPath(request.body, '$.user')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_evaluateAdaptiveProtection(self):
-        match = {"expr": {"expression": "evaluateAdaptiveProtection()"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_evaluateAdaptiveProtectionAutoDeploy(self):
-        match = {"expr": {"expression": "evaluateAdaptiveProtectionAutoDeploy()"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_urlDecode(self):
-        match = {"expr": {"expression": "request.path.urlDecode().contains('/admin')"}}
-        assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
-
-    def test_ga311_known_htmlDecode(self):
-        match = {"expr": {"expression": "request.body.htmlDecode().contains('<script')"}}
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "request.path.contains('/api')",
+            "request.path.startsWith('/api')",
+            "request.path.endsWith('.html')",
+            "request.path.matches('.*api.*')",
+            "request.method.lower() == 'get'",
+            "request.method.upper() == 'GET'",
+            "request.headers['auth'].base64Decode() == 'x'",
+            "inIpRange(origin.ip, '1.0.0.0/8')",
+            "size(request.query) > 100",
+            "int(request.headers['x']) > 100",
+            "evaluatePreconfiguredWaf('sqli-v33-stable')",
+            "evaluatePreconfiguredExpr('xss-v33-stable')",
+            "has(request.headers['X-Custom'])",
+            "evaluateThreatIntelligence('iplist-known-malicious-ips')",
+            "evaluateThreatIntelligenceWithExcl('iplist-known-malicious-ips', ['1.2.3.0/24'])",
+            "evaluateJsonPath(request.body, '$.user')",
+            "evaluateAdaptiveProtection()",
+            "evaluateAdaptiveProtectionAutoDeploy()",
+            "request.path.urlDecode().contains('/admin')",
+            "request.body.htmlDecode().contains('<script')",
+        ],
+    )
+    def test_ga311_known_function_does_not_fire(self, expression):
+        match = {"expr": {"expression": expression}}
         assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_deduped(self):
@@ -3661,3 +3570,434 @@ class TestRuleEntryNotDict:
         assert_lint(results, "GA004")
         ga004_count = sum(1 for res in results if res.rule_id == "GA004")
         assert ga004_count == 1
+
+
+# --- GA110: Negated comparison simplification ---
+
+
+class TestGA110NegatedComparisons:
+    """GA110: Negated comparisons that can be simplified."""
+
+    def test_ga110_negated_equality(self):
+        """Detect !(a == b)."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": '!(request.path == "/admin")'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga110 = [r for r in results if r.rule_id == "GA110"]
+        assert len(ga110) == 1
+        assert "simplified" in ga110[0].message.lower()
+        assert "!=" in ga110[0].suggestion
+
+    def test_ga110_negated_inequality(self):
+        """Detect !(a != b)."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": '!(request.method != "GET")'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga110 = [r for r in results if r.rule_id == "GA110"]
+        assert len(ga110) == 1
+        assert "==" in ga110[0].suggestion
+
+    def test_ga110_negated_greater_than(self):
+        """Detect !(a > b) → a <= b."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": "!(request.body_size > 1000)"}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga110 = [r for r in results if r.rule_id == "GA110"]
+        assert len(ga110) == 1
+        assert "<=" in ga110[0].suggestion
+
+    def test_ga110_no_fire_on_simple_negation(self):
+        """Don't fire on !field (CEL bool negation)."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": "!request.has_ssl_protocol"}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga110 = [r for r in results if r.rule_id == "GA110"]
+        assert len(ga110) == 0
+
+    def test_ga110_no_fire_on_complex_expr(self):
+        """Don't fire on !(complex expression)."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {"expression": '!(request.path == "/a" && request.method == "GET")'}
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga110 = [r for r in results if r.rule_id == "GA110"]
+        assert len(ga110) == 0
+
+    def test_ga110_multiple_in_expression(self):
+        """Detect multiple negated comparisons in one expression."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": '!(a == "x") || !(b != "y")'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga110 = [r for r in results if r.rule_id == "GA110"]
+        assert len(ga110) == 2
+
+
+# --- GA111: OR chain optimization ---
+
+
+class TestGA111OrChainOptimization:
+    """GA111: OR chains that can use 'in' operator."""
+
+    def test_ga111_three_value_chain(self):
+        """Detect a == "x" || a == "y" || a == "z"."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {
+                        "expression": (
+                            'request.method == "GET" || request.method == "POST" '
+                            '|| request.method == "PUT"'
+                        )
+                    }
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga111 = [r for r in results if r.rule_id == "GA111"]
+        assert len(ga111) == 1
+        assert "in" in ga111[0].suggestion
+        assert "GET" in ga111[0].suggestion
+
+    def test_ga111_no_fire_on_two_values(self):
+        """Don't fire on only two values (noise threshold)."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {"expression": 'request.method == "GET" || request.method == "POST"'}
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga111 = [r for r in results if r.rule_id == "GA111"]
+        assert len(ga111) == 0
+
+    def test_ga111_no_fire_on_mixed_operators(self):
+        """Don't fire if operators are different."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {"expression": 'request.method == "GET" || request.method != "POST"'}
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga111 = [r for r in results if r.rule_id == "GA111"]
+        assert len(ga111) == 0
+
+    def test_ga111_no_fire_on_different_fields(self):
+        """Fire if one field has 3+ values despite other fields present."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {
+                        "expression": (
+                            'request.method == "GET" || request.path == "/admin" '
+                            '|| request.path == "/staff" || request.path == "/root"'
+                        )
+                    }
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga111 = [r for r in results if r.rule_id == "GA111"]
+        # One chain on request.path should fire (3 values)
+        assert len(ga111) == 1
+
+    def test_ga111_four_value_chain(self):
+        """Detect chains with more than 3 values."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": 'a == "1" || a == "2" || a == "3" || a == "4"'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga111 = [r for r in results if r.rule_id == "GA111"]
+        assert len(ga111) == 1
+
+
+# --- GA112: Contradictory AND (always false) ---
+
+
+class TestGA112ContradictoryAnd:
+    """GA112: AND chains that are always false."""
+
+    def test_ga112_contradictory_values(self):
+        """Detect a == "x" && a == "y" (different literals)."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {"expression": 'request.method == "GET" && request.method == "POST"'}
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga112 = [r for r in results if r.rule_id == "GA112"]
+        assert len(ga112) == 1
+        assert "always false" in ga112[0].message.lower()
+
+    def test_ga112_no_fire_on_same_value(self):
+        """Don't fire when same field has same value (redundant but not contradictory)."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {"expression": 'request.method == "GET" && request.method == "GET"'}
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga112 = [r for r in results if r.rule_id == "GA112"]
+        assert len(ga112) == 0
+
+    def test_ga112_no_fire_on_mixed_operators(self):
+        """Don't fire on mixed operators like a == "x" && a != "y"."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {"expression": 'request.method == "GET" && request.method != "POST"'}
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga112 = [r for r in results if r.rule_id == "GA112"]
+        assert len(ga112) == 0
+
+    def test_ga112_three_way_contradiction(self):
+        """Detect contradiction across 3+ clauses."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": 'a == "x" && a == "y" && a == "z"'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga112 = [r for r in results if r.rule_id == "GA112"]
+        assert len(ga112) == 1
+
+
+# --- GA113: Mixed && and || without parens ---
+
+
+class TestGA113MixedOperators:
+    """GA113: Mixed && and || at depth zero without explicit parens."""
+
+    def test_ga113_and_then_or(self):
+        """Detect a && b || c pattern."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": 'a == "x" && b == "y" || c == "z"'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga113 = [r for r in results if r.rule_id == "GA113"]
+        assert len(ga113) == 1
+
+    def test_ga113_or_then_and(self):
+        """Detect a || b && c pattern."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": 'a == "x" || b == "y" && c == "z"'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga113 = [r for r in results if r.rule_id == "GA113"]
+        assert len(ga113) == 1
+
+    def test_ga113_no_fire_when_parenthesized(self):
+        """Don't fire when already explicitly parenthesized."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": '(a == "x" && b == "y") || c == "z"'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga113 = [r for r in results if r.rule_id == "GA113"]
+        assert len(ga113) == 0
+
+    def test_ga113_no_fire_on_only_and(self):
+        """Don't fire when only && operators."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": 'a == "x" && b == "y" && c == "z"'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga113 = [r for r in results if r.rule_id == "GA113"]
+        assert len(ga113) == 0
+
+    def test_ga113_no_fire_on_only_or(self):
+        """Don't fire when only || operators."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {"expr": {"expression": 'a == "x" || b == "y" || c == "z"'}},
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga113 = [r for r in results if r.rule_id == "GA113"]
+        assert len(ga113) == 0
+
+    def test_ga113_complex_mixed(self):
+        """Detect complex mixed expressions."""
+        rules = [
+            {
+                "ref": "test-rule",
+                "match": {
+                    "expr": {
+                        "expression": (
+                            'request.path == "/admin" && request.method == "POST" '
+                            '|| origin.region_code == "FR"'
+                        )
+                    }
+                },
+                "action": "allow",
+            }
+        ]
+        results = validate_rules(rules, phase="test")
+        ga113 = [r for r in results if r.rule_id == "GA113"]
+        assert len(ga113) == 1
+
+
+# ---------------------------------------------------------------------------
+# Test Rule Overlap — Multiple rules fire independently on same input
+# ---------------------------------------------------------------------------
+class TestRuleOverlap:
+    """Document intentional double-firing behavior for known overlap pairs.
+
+    Lint rules fire independently — when two rules catch different concerns
+    on the same input, both should fire to give richer signal to the user.
+    """
+
+    def test_ga328_ga329_overlap_permissive_vs_literal(self):
+        """GA328 ∩ GA329: Document current behavior for overlap.
+
+        GA328: Overly-permissive regex in matches() (^.+$, ^.*$, etc.)
+        GA329: Anchored-literal regex (^foo$, etc.)
+
+        A pattern like ^.+$ is permissive (GA328) but NOT a literal (not GA329).
+        A pattern like ^foo$ is a literal (GA329) but NOT permissive (not GA328).
+
+        Currently, they do NOT overlap because the permissive set excludes
+        literals, and the fully-anchored literal check excludes quantifiers.
+        This test documents that behavior.
+        """
+        # Permissive pattern: ^.+$ matches GA328 only
+        results1 = validate_rules(
+            [_rule(match={"expr": {"expression": 'request.path.matches("^.+$")'}})]
+        )
+        rule_ids1 = {r.rule_id for r in results1}
+        assert "GA328" in rule_ids1, f"GA328 not found for ^.+$; got {rule_ids1}"
+        assert "GA329" not in rule_ids1, f"GA329 should NOT fire for ^.+$; got {rule_ids1}"
+
+        # Anchored literal pattern: ^foo$ matches GA329 only
+        results2 = validate_rules(
+            [_rule(match={"expr": {"expression": 'request.path.matches("^foo$")'}})]
+        )
+        rule_ids2 = {r.rule_id for r in results2}
+        assert "GA328" not in rule_ids2, f"GA328 should NOT fire for ^foo$; got {rule_ids2}"
+        assert "GA329" in rule_ids2, f"GA329 not found for ^foo$; got {rule_ids2}"
+
+    def test_ga110_ga112_overlap_negation_and_contradiction(self):
+        """GA110 ∩ GA112: Negation vs contradictory logic.
+
+        GA110: Suggests simplifying negated comparisons (!(a == "x") → a != "x")
+        GA112: Warns when AND contradicts itself (a == "x" && a == "y" always false)
+
+        These address different concerns:
+        - GA110 fires on !(a == "x") or similar negation patterns
+        - GA112 fires on AND chains with contradictory values
+
+        They do NOT overlap because GA110 is about simplifying negations,
+        while GA112 is about AND-chain contradictions. A negated comparison
+        like !(a == "x") does not trigger GA112 (it's a single negation,
+        not a contradictory AND).
+
+        The expression !(a == "x") && !(a == "y") COULD theoretically
+        fire both (two negations in an AND chain), but that's not actually
+        a contradiction (!(x) && !(y) means not x AND not y, which is valid).
+
+        This test documents the current behavior.
+        """
+        # Expression with negation: fires GA110 only
+        results1 = validate_rules(
+            [_rule(match={"expr": {"expression": '!(origin.region_code == "US")'}})]
+        )
+        rule_ids1 = {r.rule_id for r in results1}
+        assert "GA110" in rule_ids1, f"GA110 not found; got {rule_ids1}"
+        assert "GA112" not in rule_ids1, (
+            f"GA112 should NOT fire for negation alone; got {rule_ids1}"
+        )
+
+        # Expression with contradictory AND: fires GA112 only
+        results2 = validate_rules(
+            [
+                _rule(
+                    match={
+                        "expr": {
+                            "expression": 'origin.region_code == "US" && origin.region_code == "UK"'
+                        }
+                    }
+                )
+            ]
+        )
+        rule_ids2 = {r.rule_id for r in results2}
+        assert "GA110" not in rule_ids2, (
+            f"GA110 should NOT fire for AND contradiction; got {rule_ids2}"
+        )
+        assert "GA112" in rule_ids2, f"GA112 not found; got {rule_ids2}"

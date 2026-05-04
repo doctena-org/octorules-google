@@ -1,8 +1,10 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **77 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **87 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
 
 These rules are registered automatically when `octorules-google` is installed. They run alongside any core and other provider rules during `octorules lint`.
+
+**Note:** Lint rules fire independently — multiple rules may report on the same input when they catch different concerns, providing richer signal for policy optimization.
 
 ### Suppressing rules
 
@@ -58,6 +60,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA005](#ga005--duplicate-ref-within-phase) | Duplicate ref within phase | ERROR |
 | [GA006](#ga006--phase-value-is-not-a-list) | Phase value is not a list | ERROR |
 | [GA020](#ga020--unknown-top-level-rule-field) | Unknown top-level rule field | ERROR |
+| [GA027](#ga027--leadingtrailing-whitespace-in-matchexprexpression) | Leading/trailing whitespace in match.expr.expression | INFO |
 | [GA100](#ga100--invalid-priority-must-be-non-negative-integer) | Invalid priority (must be non-negative integer) | ERROR |
 | [GA101](#ga101--priority-out-of-range-0-2147483646) | Priority out of range (0-2147483646) | ERROR |
 | [GA102](#ga102--duplicate-priority) | Duplicate priority | ERROR |
@@ -65,6 +68,10 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA104](#ga104--duplicate-cel-expression-across-rules) | Duplicate CEL expression across rules | WARNING |
 | [GA105](#ga105--inconsistent-enforce_on_key-across-rate-limit-rules) | Inconsistent enforce_on_key across rate-limit rules | WARNING |
 | [GA108](#ga108--duplicate-preconfigured-waf-rule-set-across-rules) | Duplicate preconfigured WAF rule set across rules | WARNING |
+| [GA110](#ga110--negated-comparison-can-be-simplified) | Negated comparison can be simplified | INFO |
+| [GA111](#ga111--or-chain-of-same-field-equality-can-use-in-operator) | OR chain of same-field equality can use 'in' operator | INFO |
+| [GA112](#ga112--contradictory-and-condition) | Contradictory AND condition (always false) | WARNING |
+| [GA113](#ga113--mixed--and--without-explicit-parentheses) | Mixed && and || without explicit parentheses (precedence clarity) | INFO |
 | [GA200](#ga200--invalid-action) | Invalid action | ERROR |
 | [GA201](#ga201--invalid-deny-status-code) | Invalid deny status code | ERROR |
 | [GA300](#ga300--match-must-have-expr-or-configversioned_expr-not-bothneither) | Match must have 'expr' or 'config'+'versioned_expr', not both/neither | ERROR |
@@ -89,6 +96,8 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA325](#ga325--invalid-header_action-sub-structure) | Invalid header_action structure | ERROR |
 | [GA326](#ga326--network_match-must-be-a-dict) | Invalid network_match structure | ERROR |
 | [GA327](#ga327--invalid-preconfigured_waf_config-exclusions) | Invalid preconfigured_waf_config structure | ERROR |
+| [GA328](#ga328--overly-permissive-regex-in-matches) | Overly-permissive regex in matches() | WARNING |
+| [GA329](#ga329--anchored-literal-regex-should-use-equality-operator) | Anchored-literal regex should use equality operator | INFO |
 | [GA400](#ga400--rate-limit-action-requires-rate_limit_options) | Rate-limit action requires 'rate_limit_options' | ERROR |
 | [GA401](#ga401--redirect-action-requires-redirect_options) | Redirect action requires 'redirect_options' | ERROR |
 | [GA402](#ga402--invalid-redirect-type) | Invalid redirect type | ERROR |
@@ -125,6 +134,8 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA501](#ga501--regex-rule-count-exceeds-standard-tier-limit) | Regex rule count exceeds standard tier limit (10) | WARNING |
 | [GA502](#ga502--rule-count-exceeds-tier-limit) | Rule count exceeds tier limit | WARNING |
 | [GA503](#ga503--privatereserved-ip-range-in-src_ip_ranges) | Private/reserved IP range in src_ip_ranges | WARNING |
+| [GA526](#ga526--http-header-name-should-be-lowercase) | HTTP header name should be lowercase in bracket access | INFO |
+| [GA529](#ga529--deprecated-field-or-versioned_expr-value) | Deprecated field or versioned_expr value detected | WARNING |
 | [GA600](#ga600--rule-is-in-preview-mode) | Rule is in preview mode (preview: true) | INFO |
 | [GA601](#ga601--expression-is-always-true) | Expression is always true — this is a catch-all rule | WARNING |
 | [GA602](#ga602--expression-is-always-false) | Expression is always false — rule never matches | WARNING |
@@ -300,7 +311,132 @@ gcloud_armor_custom_rules:
 
 ---
 
+### GA027 -- Leading/trailing whitespace in match.expr.expression
+
+**Severity:** INFO
+
+A CEL expression has leading or trailing whitespace that should be trimmed for consistency and clarity.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "  origin.region_code == 'CN'  "
+```
+
+**Fix:** Remove leading and trailing whitespace:
+
+```yaml
+      expr:
+        expression: "origin.region_code == 'CN'"
+```
+
+---
+
 ## Priority and Cross-Rule (GA100--GA108)
+
+### GA110 -- Negated comparison can be simplified
+
+**Severity:** INFO
+
+A CEL comparison uses unnecessary negation that can be simplified. For example, `!(a == b)` can be written as `a != b`, and `!(a > b)` can be written as `a <= b`.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "!(origin.ip == '1.2.3.4')"
+```
+
+**Fix:** Simplify the comparison:
+
+```yaml
+      expr:
+        expression: "origin.ip != '1.2.3.4'"
+```
+
+---
+
+### GA111 -- OR chain of same-field equality can use 'in' operator
+
+**Severity:** INFO
+
+An OR chain compares the same field against multiple literal values with equality. This can be simplified using the `in` operator.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "origin.region_code == 'CN' || origin.region_code == 'RU' || origin.region_code == 'KP'"
+```
+
+**Fix:** Use the `in` operator:
+
+```yaml
+      expr:
+        expression: "origin.region_code in ['CN', 'RU', 'KP']"
+```
+
+---
+
+### GA112 -- Contradictory AND condition (always false)
+
+**Severity:** WARNING
+
+A CEL AND condition is impossible — the same field is compared for equality with two different literal values, making the condition always false. This is dead code.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "origin.region_code == 'CN' && origin.region_code == 'US'"
+```
+
+**Fix:** Remove the contradictory condition or fix the logic.
+
+---
+
+### GA113 -- Mixed && and || without explicit parentheses (precedence clarity)
+
+**Severity:** INFO
+
+A CEL expression mixes `&&` (AND) and `||` (OR) operators at the top parenthesis depth without explicit grouping. Operator precedence may be unclear to readers.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "origin.region_code == 'CN' && request.method == 'POST' || request.path.startsWith('/api')"
+```
+
+**Fix:** Add explicit parentheses to clarify precedence:
+
+```yaml
+      expr:
+        expression: "(origin.region_code == 'CN' && request.method == 'POST') || request.path.startsWith('/api')"
+```
+
+---
 
 ### GA100 -- Invalid priority (must be non-negative integer)
 
@@ -1101,6 +1237,60 @@ gcloud_armor_preconfigured_rules:
           request_header:
             - op: EQUALS
               val: "X-Custom"
+```
+
+---
+
+### GA328 -- Overly-permissive regex in matches()
+
+**Severity:** WARNING
+
+Flags regex patterns in CEL `.matches()` calls that are overly permissive or use suspicious metacharacters. Detects unescaped `.` (matches any character), unescaped `?` (zero-width assertion), and `/*/` glob patterns on path fields. These patterns often unintentionally match more traffic than intended.
+
+Context-aware: only flags unescaped `.` on hostname/URI/path/cert-DN fields; skips if followed by quantifiers `*`/`+`/`?`/`{` that form escape sequences. Flags unescaped `?` on URI-context fields but allows `https?` exception.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "request.path.matches('admin.*')"
+```
+
+**Fix:** Escape metacharacters or use a more specific pattern:
+
+```yaml
+        expression: "request.path.matches('admin\\\\..*')"
+```
+
+Or suppress with `# octorules:disable=GA328` if the pattern is intentional.
+
+---
+
+### GA329 -- Anchored-literal regex should use equality operator
+
+**Severity:** INFO
+
+A CEL `.matches()` call uses a fully-anchored literal regex (e.g., `^foo$`) where an equality comparison would be clearer and more efficient.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: "request.path.matches('^/admin$')"
+```
+
+**Fix:** Use the equality operator instead:
+
+```yaml
+        expression: "request.path == '/admin'"
 ```
 
 ---
@@ -1913,6 +2103,61 @@ gcloud_armor_custom_rules:
 ```
 
 **Fix:** Use public IP ranges that match actual client traffic, or remove the rule if it was added in error. If you are testing locally, suppress with `# octorules:disable=GA503`. Private ranges like `10.x`, `172.16.x`, and `192.168.x` will never match real internet traffic in Cloud Armor.
+
+---
+
+### GA526 -- HTTP header name should be lowercase in bracket access
+
+**Severity:** INFO
+
+A CEL `request.headers["..."]` bracket access uses a header name with uppercase letters. Header names in CEL are case-insensitive, but using lowercase consistently improves readability.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      expr:
+        expression: 'request.headers["X-Custom-Header"] == "value"'
+```
+
+**Fix:** Use lowercase header names:
+
+```yaml
+        expression: 'request.headers["x-custom-header"] == "value"'
+```
+
+---
+
+### GA529 -- Deprecated field or versioned_expr value detected
+
+**Severity:** WARNING
+
+The `versioned_expr` field is deprecated. Use CEL expressions (`match.expr`) instead for more flexible and maintainable rules.
+
+Note: `enforce_on_key` is not deprecated — it is a valid alternative to `enforce_on_key_configs` for rate-limiting rules.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "1000"
+    action: deny(403)
+    match:
+      versioned_expr: SRC_IPS_V1
+      config:
+        src_ip_ranges:
+          - "1.2.3.0/24"
+```
+
+**Fix:** Migrate to CEL expressions if possible:
+
+```yaml
+      expr:
+        expression: "inIpRange(origin.ip, '1.2.3.0/24')"
+```
 
 ---
 

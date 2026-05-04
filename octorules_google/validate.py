@@ -9,6 +9,14 @@ import celpy
 from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
 from octorules.reserved_ips import is_reserved
 
+from octorules_google.linter.cel_regex import (
+    extract_regex_field_pairs,
+    find_contradictory_and,
+    find_negated_comparisons,
+    find_or_chains_eq_same_field,
+    has_mixed_and_or_at_depth_zero,
+)
+
 # Rule IDs emitted by validate_rules() — kept in sync with _rules.py by
 # test_plugin_rule_ids_match_metas.
 RULE_IDS: frozenset[str] = frozenset(
@@ -19,6 +27,7 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA004",
         "GA005",
         "GA020",
+        "GA027",
         "GA100",
         "GA101",
         "GA102",
@@ -26,6 +35,10 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA104",
         "GA105",
         "GA108",
+        "GA110",
+        "GA111",
+        "GA112",
+        "GA113",
         "GA200",
         "GA201",
         "GA300",
@@ -50,6 +63,9 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA325",
         "GA326",
         "GA327",
+        "GA328",
+        "GA329",
+        "GA526",
         "GA400",
         "GA401",
         "GA402",
@@ -86,6 +102,7 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA501",
         "GA502",
         "GA503",
+        "GA529",
         "GA600",
         "GA601",
         "GA602",
@@ -310,6 +327,10 @@ def _extract_sensitivity(expr: str, start: int) -> int | None:
 # GA418: header names in request.headers["..."] bracket access
 _HEADER_BRACKET_RE = re.compile(r"""request\.headers\[\s*["']([^"']+)["']\s*\]""")
 
+# GA526: HTTP header names should be lowercase in bracket access
+# Matches any header name with at least one uppercase letter
+_HEADER_BRACKET_WITH_CASE_RE = re.compile(r"""request\.headers\[\s*["']([^"']+)["']\s*\]""")
+
 # --- GA315: Country code validation in CEL expressions ---
 _COUNTRY_CODE_EQ_RE = re.compile(r"""origin\.region_code\s*[!=]=\s*["']([A-Za-z]+)["']""")
 _COUNTRY_CODE_IN_RE = re.compile(r"""origin\.region_code\s+in\s*\[([^\]]+)\]""")
@@ -321,6 +342,47 @@ _VALID_HTTP_METHODS = frozenset(
 )
 _HTTP_METHOD_EQ_RE = re.compile(r"""request\.method\s*[!=]=\s*["']([^"']+)["']""")
 _HTTP_METHOD_IN_RE = re.compile(r"""request\.method\s+in\s*\[([^\]]+)\]""")
+
+# --- GA328: Overly-permissive regex patterns in matches() ---
+_OVERLY_PERMISSIVE_REGEX_ANY_CONTEXT = frozenset(
+    {
+        "",
+        ".",
+        ".*",
+        "^.*",
+        ".*$",
+        "^.*$",
+        ".+",
+        "^.+",
+        ".+$",
+        "^.+$",
+        "^",
+        "$",
+        "|",
+    }
+)
+_OVERLY_PERMISSIVE_REGEX_FOR_PATHS = frozenset(
+    {
+        "/",
+        "^/",
+        "/.*",
+        "^/.*",
+        "/.*$",
+        "^/.*$",
+    }
+)
+_PATH_FIELDS_FOR_PERMISSIVE_CHECK = frozenset(
+    {
+        "request.path",
+    }
+)
+
+# --- GA329: Fully-anchored literal regex that should use equality operator ---
+_FULLY_ANCHORED_LITERAL_REGEX = re.compile(
+    r"^\^"  # start anchor
+    r"((?:[a-zA-Z0-9_/-]|\\\.|\\/)+)"  # literal-only payload (escaped . or / OK)
+    r"\$$"  # end anchor
+)
 
 # --- GA317: CIDR validation in inIpRange() ---
 _IN_IP_RANGE_RE = re.compile(r"""inIpRange\s*\(\s*[^,]+,\s*["']([^"']+)["']\s*\)""")
@@ -454,6 +516,7 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
     _check_dead_rules(rules, results, phase)
     _check_inconsistent_enforce_on_key(seen_enforce_on_keys, results, phase)
     _check_duplicate_waf_rulesets(seen_waf_rulesets, results, phase)
+    _check_deprecated_versioned_expr(rules, results, phase)
 
     return results
 
@@ -1146,19 +1209,41 @@ def _check_match_deep(
             )
             return  # No point in field/function extraction on empty expr
 
-        # --- GA310/GA311/GA413/GA416/GA418: field, function, regex, sensitivity,
-        #     and header name extraction (only on non-empty exprs) ---
+        # --- GA027: leading/trailing whitespace in expression ---
+        if isinstance(expression, str) and expression != expression.strip():
+            results.append(
+                _result(
+                    rule_id="GA027",
+                    severity=Severity.INFO,
+                    message="Expression has leading/trailing whitespace",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                    suggestion="Remove leading/trailing whitespace from the expression",
+                )
+            )
+
+        # --- GA310/GA311/GA413/GA416/GA418/GA328/GA329: field, function, regex,
+        #     sensitivity, header name, and permissive regex checks (only on
+        #     non-empty exprs) ---
         if isinstance(expression, str) and expression.strip():
             _check_cel_fields(expression, results, phase, ref)
             _check_cel_functions(expression, results, phase, ref)
             _check_cel_regex(expression, results, phase, ref)
+            _check_overly_permissive_regex(expression, results, phase, ref)
+            _check_unnecessary_regex(expression, results, phase, ref)
             _check_cel_sensitivity(expression, results, phase, ref)
             _check_cel_header_names(expression, results, phase, ref)
+            _check_cel_header_name_case(expression, results, phase, ref)
             _check_cel_country_codes(expression, results, phase, ref)
             _check_cel_http_methods(expression, results, phase, ref)
             _check_cel_iniprange_cidr(expression, results, phase, ref)
             _check_cel_type_mismatch(expression, results, phase, ref)
             _check_cel_case_sensitivity(expression, results, phase, ref)
+            _check_negated_comparisons(expression, results, phase, ref)
+            _check_or_chain_optimization(expression, results, phase, ref)
+            _check_contradictory_logic(expression, results, phase, ref)
+            _check_mixed_operators(expression, results, phase, ref)
 
 
 def _check_cel_fields(
@@ -1267,6 +1352,113 @@ def _check_cel_regex(
             )
 
 
+def _check_overly_permissive_regex(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA328: Flag regex patterns that match every value.
+
+    Uses extract_regex_field_pairs to pair the regex with its receiver field,
+    ensuring the lint only fires on plain field references (not function calls).
+    """
+    for field_name, regex in extract_regex_field_pairs(expr):
+        permissive = _OVERLY_PERMISSIVE_REGEX_ANY_CONTEXT
+        if field_name in _PATH_FIELDS_FOR_PERMISSIVE_CHECK:
+            permissive = permissive | _OVERLY_PERMISSIVE_REGEX_FOR_PATHS
+        if regex in permissive:
+            results.append(
+                _result(
+                    rule_id="GA328",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"Regex {regex!r} on field {field_name!r} matches every "
+                        "value; this rule has effectively no condition"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                    suggestion=(
+                        "Use a more specific pattern, or remove the rule if the "
+                        "match-all behavior is intentional"
+                    ),
+                )
+            )
+
+
+def _check_unnecessary_regex(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA329: Flag matches("^foo$") patterns that are just literals.
+
+    A regex anchored at both ends with no metacharacters in between is
+    equivalent to an equality check — same semantics, simpler to read,
+    and avoids the regex engine.
+
+    Conservative scope: only fires on alphanumerics + `_`, `-`, `/`, and
+    escaped dots/slashes. Patterns containing alternation, character
+    classes, or quantifiers fall through (those are real regexes).
+    """
+    for field_name, regex in extract_regex_field_pairs(expr):
+        m = _FULLY_ANCHORED_LITERAL_REGEX.match(regex)
+        if m is None:
+            continue
+        # Reconstruct the literal: unescape `\.` → `.` and `\/` → `/`.
+        literal = m.group(1).replace(r"\.", ".").replace(r"\/", "/")
+        results.append(
+            _result(
+                rule_id="GA329",
+                severity=Severity.INFO,
+                message=(
+                    f"Regex {regex!r} on field {field_name!r} is a fully-anchored "
+                    f"literal; can be simplified to {field_name} == {literal!r}"
+                ),
+                phase=phase,
+                ref=ref,
+                field="match.expr.expression",
+                suggestion=f'Replace with: {field_name} == "{literal}"',
+            )
+        )
+
+
+def _check_deprecated_versioned_expr(
+    rules: list[dict],
+    results: list[LintResult],
+    phase: str,
+) -> None:
+    """GA529: Flag deprecated versioned_expr field.
+
+    versioned_expr is deprecated in favor of CEL expressions (match.expr).
+    """
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        ref = rule.get("ref", "unknown")
+        match = rule.get("match", {})
+        if not isinstance(match, dict):
+            continue
+        # Flag versioned_expr regardless of value — it's deprecated
+        if "versioned_expr" in match:
+            results.append(
+                _result(
+                    rule_id="GA529",
+                    severity=Severity.WARNING,
+                    message=(
+                        "Field 'versioned_expr' is deprecated; use 'match.expr' "
+                        "(CEL expressions) instead"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="match.versioned_expr",
+                    suggestion="Migrate to CEL expressions in match.expr",
+                )
+            )
+
+
 def _check_cel_sensitivity(
     expr: str,
     results: list[LintResult],
@@ -1313,6 +1505,34 @@ def _check_cel_header_names(
                     phase=phase,
                     ref=ref,
                     field="match.expr.expression",
+                )
+            )
+
+
+def _check_cel_header_name_case(
+    expr: str,
+    results: list[LintResult],
+    phase: str,
+    ref: str,
+) -> None:
+    """GA526: HTTP header names should be lowercase in bracket access."""
+    seen: set[str] = set()
+    for m in _HEADER_BRACKET_WITH_CASE_RE.finditer(expr):
+        name = m.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+        # Check if name has any uppercase letters
+        if name != name.lower():
+            results.append(
+                _result(
+                    rule_id="GA526",
+                    severity=Severity.INFO,
+                    message=f"HTTP header name should be lowercase: {name!r} → {name.lower()!r}",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                    suggestion=f"Use {name.lower()!r} instead of {name!r}",
                 )
             )
 
@@ -2686,3 +2906,125 @@ def validate_regex_rule_count(
             )
         )
     return results
+
+
+# --- GA110: Negated comparison simplification ---
+
+
+def _check_negated_comparisons(expr: str, results: list[LintResult], phase: str, ref: str) -> None:
+    """GA110: Suggest simplifying negated comparisons.
+
+    Examples:
+    - !(a == b) → a != b
+    - !(a != b) → a == b
+    - !(a > b) → a <= b
+    - !(a < b) → a >= b
+    """
+    negated = find_negated_comparisons(expr)
+    for _start, _end, op, lhs, rhs in negated:
+        # Map operators to their negations
+        negation_map = {
+            "==": "!=",
+            "!=": "==",
+            "<": ">=",
+            ">": "<=",
+            "<=": ">",
+            ">=": "<",
+        }
+        negated_op = negation_map.get(op)
+        if negated_op:
+            suggestion = f"{lhs} {negated_op} {rhs}"
+            results.append(
+                _result(
+                    rule_id="GA110",
+                    severity=Severity.INFO,
+                    message="Negated comparison can be simplified",
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                    suggestion=f"Use {suggestion} instead",
+                )
+            )
+
+
+# --- GA111: OR chain optimization to 'in' operator ---
+
+
+def _check_or_chain_optimization(
+    expr: str, results: list[LintResult], phase: str, ref: str
+) -> None:
+    """GA111: Suggest using 'in' operator for OR chains of same-field equality.
+
+    Example: a == "x" || a == "y" || a == "z" → a in ["x", "y", "z"]
+    """
+    or_chains = find_or_chains_eq_same_field(expr)
+    for field, values in or_chains:
+        values_str = ", ".join(f'"{v}"' for v in values)
+        suggestion = f"{field} in [{values_str}]"
+        results.append(
+            _result(
+                rule_id="GA111",
+                severity=Severity.INFO,
+                message=(f"OR chain of {len(values)} values on same field can use 'in' operator"),
+                phase=phase,
+                ref=ref,
+                field="match.expr.expression",
+                suggestion=suggestion,
+            )
+        )
+
+
+# --- GA112: Contradictory AND (always false) ---
+
+
+def _check_contradictory_logic(expr: str, results: list[LintResult], phase: str, ref: str) -> None:
+    """GA112: Warn when AND chain contradicts itself (always false).
+
+    Example: a == "x" && a == "y" (different string literals)
+    """
+    contradictory = find_contradictory_and(expr)
+    for field, values in contradictory:
+        value_repr = ", ".join(repr(v) for v in values)
+        results.append(
+            _result(
+                rule_id="GA112",
+                severity=Severity.WARNING,
+                message=(
+                    f"Contradictory AND condition on field {field!r} "
+                    f"(values: {value_repr}) — always false"
+                ),
+                phase=phase,
+                ref=ref,
+                field="match.expr.expression",
+            )
+        )
+
+
+# --- GA113: Mixed && and || without explicit parens ---
+
+
+def _check_mixed_operators(expr: str, results: list[LintResult], phase: str, ref: str) -> None:
+    """GA113: Warn about mixed && and || at depth zero without explicit parens.
+
+    CEL has fixed precedence (&& > ||), so these are unambiguous, but adding
+    parens improves readability.
+
+    Example: a && b || c (could be clearer as (a && b) || c)
+    """
+    if has_mixed_and_or_at_depth_zero(expr):
+        results.append(
+            _result(
+                rule_id="GA113",
+                severity=Severity.INFO,
+                message=(
+                    "Mixed && and || operators without explicit parentheses "
+                    "(add parens for clarity)"
+                ),
+                phase=phase,
+                ref=ref,
+                field="match.expr.expression",
+                suggestion=(
+                    "Use parentheses to disambiguate operator precedence (e.g., (a && b) || c)"
+                ),
+            )
+        )

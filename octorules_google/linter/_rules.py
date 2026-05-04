@@ -11,6 +11,9 @@ GA004 = RuleMeta("GA004", "structure", "Rule entry is not a dict", Severity.ERRO
 GA005 = RuleMeta("GA005", "structure", "Duplicate ref within phase", Severity.ERROR)
 GA006 = RuleMeta("GA006", "structure", "Phase value is not a list", Severity.ERROR)
 GA020 = RuleMeta("GA020", "structure", "Unknown top-level rule field", Severity.ERROR)
+GA027 = RuleMeta(
+    "GA027", "structure", "Leading/trailing whitespace in match.expr.expression", Severity.INFO
+)
 
 # Category GA1xx — Priority & cross-rule checks
 GA100 = RuleMeta(
@@ -240,10 +243,23 @@ GA319 = RuleMeta(
 GA325 = RuleMeta("GA325", "match", "Invalid header_action structure", Severity.ERROR)
 GA326 = RuleMeta("GA326", "match", "Invalid network_match structure", Severity.ERROR)
 GA327 = RuleMeta("GA327", "match", "Invalid preconfigured_waf_config structure", Severity.ERROR)
+GA328 = RuleMeta("GA328", "match", "Overly-permissive regex in matches()", Severity.WARNING)
+GA329 = RuleMeta(
+    "GA329", "match", "Anchored-literal regex should use equality operator", Severity.INFO
+)
+GA526 = RuleMeta(
+    "GA526", "match", "HTTP header name should be lowercase in bracket access", Severity.INFO
+)
 
-# Category GA5xx — Description & IP range checks
+# Category GA5xx — Description & IP range checks & deprecated fields
 GA500 = RuleMeta(
     "GA500", "description", "Description exceeds 1024 character limit", Severity.WARNING
+)
+GA529 = RuleMeta(
+    "GA529",
+    "match",
+    "Deprecated field or versioned_expr value detected",
+    Severity.WARNING,
 )
 GA501 = RuleMeta(
     "GA501", "cross_rule", "Regex rule count exceeds standard tier limit (10)", Severity.WARNING
@@ -266,6 +282,32 @@ GA602 = RuleMeta(
     Severity.WARNING,
 )
 GA603 = RuleMeta("GA603", "best_practice", "Rule is disabled (enabled: false)", Severity.INFO)
+
+# Category GA1xx — CEL expression style checks (continued)
+GA110 = RuleMeta(
+    "GA110",
+    "match",
+    "Negated comparison can be simplified (!(a == b) → a != b)",
+    Severity.INFO,
+)
+GA111 = RuleMeta(
+    "GA111",
+    "match",
+    "OR chain of same-field equality can use 'in' operator",
+    Severity.INFO,
+)
+GA112 = RuleMeta(
+    "GA112",
+    "match",
+    "Contradictory AND condition (always false)",
+    Severity.WARNING,
+)
+GA113 = RuleMeta(
+    "GA113",
+    "match",
+    "Mixed && and || without explicit parentheses (precedence clarity)",
+    Severity.INFO,
+)
 
 # Collect all rule metas for registration
 GA_RULE_METAS: list[RuleMeta] = [obj for obj in globals().values() if isinstance(obj, RuleMeta)]
