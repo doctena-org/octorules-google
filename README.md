@@ -157,13 +157,14 @@ match:
 
 | Prefix | Category | Rules |
 |--------|----------|-------|
-| GA001-GA006, GA020 | Structure | 7 |
-| GA100-GA108 | Priority / cross-rule | 7 |
+| GA001-GA027 | Structure | 8 |
+| GA100-GA113 | Priority / cross-rule / expression style | 11 |
 | GA200-GA201 | Action | 2 |
-| GA300-GA327 | Match / expression / CEL / sub-structure | 22 |
-| GA400-GA433 | Rate limit / redirect / action params | 32 |
-| GA500-GA503 | Best practice | 4 |
-| GA600-GA602 | Preview / catch-all | 3 |
+| GA300-GA329 | Match / expression / CEL / CIDR | 24 |
+| GA400-GA433 | Rate limit / redirect / action parameters | 32 |
+| GA500-GA503 | Description / cross-rule checks | 4 |
+| GA526, GA529 | Match (continued) | 2 |
+| GA600-GA603 | Best practice | 4 |
 
 ```bash
 octorules lint --config config.yaml
@@ -177,7 +178,7 @@ Lint rules are registered automatically when octorules-google is installed. CEL 
 - **Policy creation/deletion:** octorules-google manages rules within existing security policies. Creating or deleting policies (and attaching them to backend services) should be done via `gcloud` or Terraform.
 - **Policy settings require the extension.** Policy-level settings (`adaptive_protection_config`, `advanced_options_config`, `ddos_protection_config`, `default_rule_action`, `recaptcha_options_config`) are managed via the `gcloud_armor_policy_settings` extension. Without the extension enabled, these settings should be managed via `gcloud` or Terraform.
 
-> **Note:** Per-rule rate limiting fields (`enforceOnKey`, `enforceOnKeyConfigs`, `banDurationSec`), header actions (`headerAction`), and CEL functions like `evaluateJsonPath()` are already supported — they pass through as-is in the rule dict.
+> **Note:** Per-rule rate limiting fields (`enforceOnKey`, `enforceOnKeyConfigs`, `banDurationSec`), header actions (`headerAction`), and CEL functions like `evaluateThreatIntelligence()` are already supported — they pass through as-is in the rule dict.
 
 ## Development
 

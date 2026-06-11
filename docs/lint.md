@@ -139,6 +139,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA600](#ga600--rule-is-in-preview-mode) | Rule is in preview mode (preview: true) | INFO |
 | [GA601](#ga601--expression-is-always-true) | Expression is always true — this is a catch-all rule | WARNING |
 | [GA602](#ga602--expression-is-always-false) | Expression is always false — rule never matches | WARNING |
+| [GA603](#ga603--rule-is-disabled) | Rule is disabled (enabled: false) | INFO |
 
 ---
 
@@ -666,7 +667,7 @@ gcloud_armor_custom_rules:
 
 **Severity:** ERROR
 
-The `deny()` action only supports status codes 403, 404, and 502. Other HTTP status codes are rejected by the Cloud Armor API.
+The `deny()` action only supports status codes 403, 404, 429, and 502. Other HTTP status codes are rejected by the Cloud Armor API.
 
 **Triggers on:**
 
@@ -911,7 +912,7 @@ gcloud_armor_custom_rules:
 
 **Severity:** WARNING
 
-The CEL expression calls a function not in the set of known Cloud Armor functions. Known functions include: `contains`, `startsWith`, `endsWith`, `matches`, `lower`, `upper`, `base64Decode`, `inIpRange`, `size`, `int`, `evaluatePreconfiguredWaf`, `evaluatePreconfiguredExpr`, and `has`.
+The CEL expression calls a function not in the set of known Cloud Armor functions. Known functions include: `base64Decode`, `contains`, `endsWith`, `evaluateAdaptiveProtection`, `evaluateAdaptiveProtectionAutoDeploy`, `evaluateAddressGroup`, `evaluateOrganizationAddressGroup`, `evaluatePreconfiguredExpr`, `evaluatePreconfiguredWaf`, `evaluateThreatIntelligence`, `has`, `inIpRange`, `int`, `lower`, `matches`, `size`, `startsWith`, `upper`, `urlDecode`, `urlDecodeUni`, and `utf8ToUnicode`. This list mirrors the [Cloud Armor rules language reference](https://cloud.google.com/armor/docs/rules-language-reference); note that threat-intelligence exclusions are an optional argument to `evaluateThreatIntelligence`, not a separate function.
 
 **Triggers on:**
 
@@ -1099,7 +1100,7 @@ gcloud_armor_custom_rules:
 
 **Severity:** INFO
 
-Warns when string equality comparisons on `request.path`, `request.query`, `request.host`, or `request.url` use mixed-case string literals. These comparisons are case-sensitive in CEL, which may cause unexpected behavior.
+Warns when string equality comparisons on `request.path` or `request.query` use mixed-case string literals. These comparisons are case-sensitive in CEL, which may cause unexpected behavior.
 
 Only triggers when the literal contains mixed case (not all-lowercase or all-uppercase). Does not trigger for `request.method` or `origin.region_code` which are conventionally uppercase.
 
@@ -1851,7 +1852,7 @@ gcloud_armor_rate_rules:
 
 **Severity:** ERROR
 
-The `enforce_on_key` value must be one of: `IP`, `ALL`, `HTTP_HEADER`, `XFF_IP`, `HTTP_COOKIE`, `HTTP_PATH`, `SNI`, or `REGION_CODE`.
+The `enforce_on_key` value must be one of: `IP`, `ALL`, `HTTP_HEADER`, `XFF_IP`, `HTTP_COOKIE`, `HTTP_PATH`, `SNI`, `REGION_CODE`, `TLS_JA3_FINGERPRINT`, `TLS_JA4_FINGERPRINT`, or `USER_IP`.
 
 **Triggers on:**
 
@@ -2193,7 +2194,7 @@ This check compares the number of rules in a phase against the tier's limit. The
 
 ---
 
-## Best Practice (GA600--GA602)
+## Best Practice (GA600--GA603)
 
 ### GA600 -- Rule is in preview mode
 
@@ -2257,6 +2258,25 @@ gcloud_armor_custom_rules:
 ```
 
 **Fix:** Fix the expression to match the intended traffic, or remove the rule. Common causes: leftover `"false"` from debugging, or a typo that makes the condition logically impossible (e.g. `origin.region_code == 'XX'` with a non-existent country code).
+
+### GA603 -- Rule is disabled
+
+**Severity:** INFO
+
+The rule has `enabled: false`. Disabled rules don't match traffic but are retained in the policy.
+
+**Triggers on:**
+
+```yaml
+gcloud_armor_custom_rules:
+  - ref: "8000"
+    enabled: false
+    action: deny(403)
+    match:
+      expr: "origin.region_code == 'CN'"
+```
+
+**Note:** A disabled rule is not an error. It's useful for preserving rules during development or temporary defeatures without deleting them.
 
 ### GA430 -- ban_duration_sec very short
 

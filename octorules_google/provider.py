@@ -6,14 +6,19 @@ Maps octorules concepts to Cloud Armor security policies:
   - Custom rulesets / Lists → Not supported
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import threading
+from typing import TYPE_CHECKING
 
 from google.api_core.exceptions import Forbidden, GoogleAPIError, NotFound, Unauthorized
 from google.auth.exceptions import DefaultCredentialsError
-from google.cloud import compute_v1
 from octorules.config import ConfigError
+
+if TYPE_CHECKING:
+    from google.cloud import compute_v1
 from octorules.phases import Phase
 from octorules.provider.base import PhaseRulesResult, Scope
 from octorules.provider.utils import (
@@ -234,7 +239,15 @@ class CloudArmorProvider:
         project: str | None = None,
         **_extra: object,
     ) -> None:
-        self._client = client or compute_v1.SecurityPoliciesClient()
+        if client is None:
+            # Deferred: google.cloud.compute_v1 takes ~0.6-1.0 s to import
+            # (protobuf schema modules). Lint-only runs import this package
+            # to register rules and never construct a provider, so the SDK
+            # must not load at module import time.
+            from google.cloud import compute_v1
+
+            client = compute_v1.SecurityPoliciesClient()
+        self._client = client
         self._project = project or os.environ.get("GCLOUD_PROJECT", "")
         if not self._project:
             raise ConfigError(

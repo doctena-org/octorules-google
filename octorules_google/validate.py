@@ -7,6 +7,7 @@ import urllib.parse
 
 import celpy
 from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
+from octorules.linter.helpers import CATCH_ALL_CIDRS, find_duplicate_priorities
 from octorules.reserved_ips import is_reserved
 
 from octorules_google.linter.cel_regex import (
@@ -200,12 +201,10 @@ _PRECONFIGURED_RE = re.compile(r"evaluatePreconfigured(?:Waf|Expr)\(\s*['\"]([^'
 _KNOWN_FIELDS = frozenset(
     {
         "request.headers",
-        "request.host",
         "request.method",
         "request.path",
         "request.scheme",
         "request.query",
-        "request.url",
         "origin.ip",
         "origin.user_ip",
         "origin.region_code",
@@ -250,13 +249,14 @@ _KNOWN_FUNCTIONS = frozenset(
         "evaluatePreconfiguredWaf",
         "evaluatePreconfiguredExpr",
         "evaluateThreatIntelligence",
-        "evaluateThreatIntelligenceWithExcl",
-        "evaluateJsonPath",
+        "evaluateAddressGroup",
+        "evaluateOrganizationAddressGroup",
         "has",
         "evaluateAdaptiveProtection",
         "evaluateAdaptiveProtectionAutoDeploy",
         "urlDecode",
-        "htmlDecode",
+        "urlDecodeUni",
+        "utf8ToUnicode",
     }
 )
 
@@ -399,18 +399,14 @@ _CEL_FIELD_TYPES: dict[str, str] = {
     "request.path": "string",
     "request.query": "string",
     "request.scheme": "string",
-    "request.host": "string",
-    "request.url": "string",
 }
 _TYPE_MISMATCH_RE = re.compile(
     r"""(\b[a-zA-Z_]\w*\.[a-zA-Z_]\w*)\s*(==|!=|>|<|>=|<=)\s*(["'].*?["']|\d+)"""
 )
 
 # --- GA319: Case sensitivity reminder ---
-_CASE_SENSITIVE_FIELDS = frozenset({"request.path", "request.query", "request.host", "request.url"})
-_CASE_SENSITIVE_CMP_RE = re.compile(
-    r"""(request\.(?:path|query|host|url))\s*==\s*["']([^"']+)["']"""
-)
+_CASE_SENSITIVE_FIELDS = frozenset({"request.path", "request.query"})
+_CASE_SENSITIVE_CMP_RE = re.compile(r"""(request\.(?:path|query))\s*==\s*["']([^"']+)["']""")
 
 # --- GA502: Tier-aware rule count limits ---
 _TIER_RULE_LIMITS: dict[str, int] = {
@@ -997,9 +993,6 @@ def _check_cidrs(
     _ga305_overlap_check(networks, results, phase, ref)
 
 
-_CATCH_ALL_CIDRS = frozenset({"0.0.0.0/0", "::/0"})
-
-
 def _ga305_overlap_check(
     networks: list[tuple[str, ipaddress.IPv4Network | ipaddress.IPv6Network]],
     results: list[LintResult],
@@ -1041,7 +1034,7 @@ def _ga305_overlap_check(
                 )
             active.append((cidr, net))
 
-    filtered = [(v, n) for v, n in networks if str(n) not in _CATCH_ALL_CIDRS]
+    filtered = [(v, n) for v, n in networks if str(n) not in CATCH_ALL_CIDRS]
     _sweep([(v, n) for v, n in filtered if n.version == 4])
     _sweep([(v, n) for v, n in filtered if n.version == 6])
 
@@ -1731,7 +1724,7 @@ def _check_cel_case_sensitivity(
     phase: str,
     ref: str,
 ) -> None:
-    """GA319: warn when string comparisons on path/query/host use mixed case."""
+    """GA319: warn when string comparisons on path/query use mixed case."""
     seen: set[str] = set()
     for m in _CASE_SENSITIVE_CMP_RE.finditer(expr):
         field_name = m.group(1)
@@ -2714,16 +2707,15 @@ def _check_duplicate_priorities(
     results: list[LintResult],
     phase: str,
 ) -> None:
-    for pri, refs in sorted(seen.items()):
-        if len(refs) > 1:
-            results.append(
-                _result(
-                    rule_id="GA102",
-                    severity=Severity.ERROR,
-                    message=f"Duplicate priority {pri} in rules: {', '.join(refs)}",
-                    phase=phase,
-                )
+    for pri, refs in find_duplicate_priorities(seen):
+        results.append(
+            _result(
+                rule_id="GA102",
+                severity=Severity.ERROR,
+                message=f"Duplicate priority {pri} in rules: {', '.join(refs)}",
+                phase=phase,
             )
+        )
 
 
 def _check_duplicate_expressions(

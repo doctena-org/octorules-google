@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-06-11
+
+### Changed
+- Importing `octorules_google` no longer loads the Google Cloud SDK;
+  lint-only runs and CLI startup are ~3x faster.
+- Minimum `octorules` dependency: `>=0.29.0`.
+
+### Fixed
+- **GA310** no longer recognizes `request.host` / `request.url`; they
+  don't exist in Cloud Armor's rules language, and expressions using
+  them now warn.
+- **GA311** now recognizes `evaluateAddressGroup` and
+  `evaluateOrganizationAddressGroup`, and no longer recognizes
+  `htmlDecode`, `evaluateJsonPath`, or
+  `evaluateThreatIntelligenceWithExcl`; calls to removed names warn.
+
 ## [0.10.0] - 2026-05-04
 
 ### Added

@@ -18,6 +18,14 @@ class TestPluginRegistration:
         meta_ids = {r.rule_id for r in GA_RULE_METAS}
         assert GA_RULE_IDS == meta_ids
 
+    def test_rule_count(self):
+        """Guard against silent rule add/remove (mirrors Azure/Bunny). Bump
+        deliberately when intentionally adding or removing a rule."""
+        assert len(GA_RULE_METAS) == 87, (
+            f"Expected 87 GA rule metas, got {len(GA_RULE_METAS)}. "
+            "If you added or removed a rule, update this count intentionally."
+        )
+
     def test_all_ga_rules_in_registry(self):
         for rule_id in GA_RULE_IDS:
             assert rule_id in RULE_REGISTRY, f"{rule_id} not in global registry"

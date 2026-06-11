@@ -902,7 +902,6 @@ class TestMatchDeep:
             "request.path.startsWith('/api')",
             "request.scheme == 'https'",
             "request.query.contains('foo')",
-            "request.url.contains('/api')",
             "origin.region_code == 'US'",
             "origin.asn == 15169",
             "origin.user_ip == '1.2.3.4'",
@@ -911,12 +910,24 @@ class TestMatchDeep:
             "token.recaptcha_action.score > 0.5",
             "token.recaptcha_session.score > 0.5",
             "token.recaptcha_exemption.valid == true",
-            "request.host == 'example.com'",
         ],
     )
     def test_ga310_known_field_does_not_fire(self, expression):
         match = {"expr": {"expression": expression}}
         assert_no_lint(validate_rules([_rule(match=match)]), "GA310")
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            # Not Cloud Armor CEL attributes: host is request.headers['host'];
+            # URL components are request.path / request.query.
+            "request.host == 'example.com'",
+            "request.url.contains('/api')",
+        ],
+    )
+    def test_ga310_fires_for_undocumented_attributes(self, expression):
+        match = {"expr": {"expression": expression}}
+        assert_lint(validate_rules([_rule(match=match)]), "GA310")
 
     def test_ga310_multiple_unknown(self):
         match = {"expr": {"expression": "bogus.one == 'x' && fake.two == 'y'"}}
@@ -958,17 +969,34 @@ class TestMatchDeep:
             "evaluatePreconfiguredExpr('xss-v33-stable')",
             "has(request.headers['X-Custom'])",
             "evaluateThreatIntelligence('iplist-known-malicious-ips')",
-            "evaluateThreatIntelligenceWithExcl('iplist-known-malicious-ips', ['1.2.3.0/24'])",
-            "evaluateJsonPath(request.body, '$.user')",
+            "evaluateThreatIntelligence('iplist-known-malicious-ips', ['1.2.3.0/24'])",
+            "evaluateAddressGroup('my-address-group', origin.ip)",
+            "evaluateOrganizationAddressGroup('org-address-group', origin.ip)",
             "evaluateAdaptiveProtection()",
             "evaluateAdaptiveProtectionAutoDeploy()",
             "request.path.urlDecode().contains('/admin')",
-            "request.body.htmlDecode().contains('<script')",
+            "request.headers['cookie'].urlDecodeUni().contains('session')",
+            "request.headers['x-utf8'].utf8ToUnicode() == 'test'",
         ],
     )
     def test_ga311_known_function_does_not_fire(self, expression):
         match = {"expr": {"expression": expression}}
         assert_no_lint(validate_rules([_rule(match=match)]), "GA311")
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            # Not in the Cloud Armor rules-language reference: exclusions are
+            # an optional argument to evaluateThreatIntelligence, and
+            # htmlDecode / evaluateJsonPath are not documented functions.
+            "evaluateThreatIntelligenceWithExcl('iplist-known-malicious-ips', ['1.2.3.0/24'])",
+            "evaluateJsonPath(request.body, '$.user')",
+            "request.body.htmlDecode().contains('<script')",
+        ],
+    )
+    def test_ga311_fires_for_undocumented_functions(self, expression):
+        match = {"expr": {"expression": expression}}
+        assert_lint(validate_rules([_rule(match=match)]), "GA311")
 
     def test_ga311_deduped(self):
         match = {"expr": {"expression": "badFunc(1) || badFunc(2)"}}
@@ -2614,11 +2642,13 @@ class TestGA319:
         match = {"expr": {"expression": "request.path == '/ADMIN'"}}
         assert_no_lint(validate_rules([_rule(match=match)]), "GA319")
 
-    def test_ga319_mixed_case_host(self):
+    def test_ga319_not_fired_for_unknown_host_attribute(self):
+        # request.host is not a Cloud Armor attribute; GA310 flags it and
+        # GA319 (case-sensitivity) stays out of the way.
         match = {"expr": {"expression": "request.host == 'Example.COM'"}}
         results = validate_rules([_rule(match=match)])
-        assert_lint(results, "GA319")
-        assert_no_lint(results, "GA310")
+        assert_no_lint(results, "GA319")
+        assert_lint(results, "GA310")
 
     def test_ga319_mixed_case_query(self):
         match = {"expr": {"expression": "request.query == 'fooBar'"}}
