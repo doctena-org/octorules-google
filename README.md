@@ -64,6 +64,12 @@ Safety thresholds are configured under `safety:` (framework-owned, not forwarded
 | `safety.update_threshold` | `30.0` | Max % of rules that can be updated |
 | `safety.min_existing` | `3` | Min rules before thresholds apply |
 
+## Examples
+
+The [`examples/`](examples/) directory contains a working single-provider
+`config.yaml` plus `rules/my-security-policy.yaml` demonstrating every
+supported phase and key. Copy it as a starting point.
+
 ## Supported features
 
 | Feature | Status | Notes |
@@ -188,7 +194,7 @@ cd octorules-google
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
+pre-commit install
 ```
 
 ## License
