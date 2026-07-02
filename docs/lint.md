@@ -674,7 +674,7 @@ The `deny()` action only supports status codes 403, 404, 429, and 502. Other HTT
 ```yaml
 gcloud_armor_custom_rules:
   - ref: "1000"
-    action: deny(429)
+    action: deny(500)
     match:
       expr:
         expression: "origin.region_code == 'CN'"
