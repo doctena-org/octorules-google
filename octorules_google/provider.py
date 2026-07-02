@@ -497,7 +497,7 @@ class CloudArmorProvider:
                         label=f"remove rule priority={pri} from {policy_name}",
                     )
                     removed.append(pri)
-        except Exception:
+        except (GoogleAPIError, DefaultCredentialsError, ConnectionError, OSError):
             # Log what succeeded before the failure so the user knows
             # the policy state.  The error itself propagates.
             log.error(

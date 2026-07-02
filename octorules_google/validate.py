@@ -7,7 +7,18 @@ import urllib.parse
 
 import celpy
 from octorules.linter.engine import LintResult, Severity, is_always_false, is_always_true
-from octorules.linter.helpers import CATCH_ALL_CIDRS, find_duplicate_priorities
+from octorules.linter.helpers import (
+    CATCH_ALL_CIDRS,
+    find_duplicate_priorities,
+    find_overlapping_cidrs,
+    normalize_host_bits,
+)
+from octorules.linter.helpers import (
+    is_strict_int as _is_strict_int,
+)
+from octorules.linter.helpers import (
+    lint_result as _result,
+)
 from octorules.reserved_ips import is_reserved
 
 from octorules_google.linter.cel_regex import (
@@ -121,33 +132,6 @@ def _parse_priority(ref: str) -> int | None:
         return int(ref)
     except (ValueError, TypeError):
         return None
-
-
-def _result(
-    rule_id: str,
-    severity: Severity,
-    message: str,
-    phase: str,
-    ref: str = "",
-    *,
-    field: str = "",
-    suggestion: str = "",
-) -> LintResult:
-    """Create a LintResult with common defaults."""
-    return LintResult(
-        rule_id=rule_id,
-        severity=severity,
-        message=message,
-        phase=phase,
-        ref=ref,
-        field=field,
-        suggestion=suggestion,
-    )
-
-
-def _is_strict_int(val: object) -> bool:
-    """True if *val* is an int but not a bool."""
-    return isinstance(val, int) and not isinstance(val, bool)
 
 
 # --- GA020: Valid top-level rule fields ------------------------------------
@@ -405,7 +389,6 @@ _TYPE_MISMATCH_RE = re.compile(
 )
 
 # --- GA319: Case sensitivity reminder ---
-_CASE_SENSITIVE_FIELDS = frozenset({"request.path", "request.query"})
 _CASE_SENSITIVE_CMP_RE = re.compile(r"""(request\.(?:path|query))\s*==\s*["']([^"']+)["']""")
 
 # --- GA502: Tier-aware rule count limits ---
@@ -928,10 +911,9 @@ def _check_cidrs(
         try:
             net = ipaddress.ip_network(cidr, strict=True)
         except ValueError:
-            # Host bits set — try non-strict to see if it's a normalizable CIDR
-            try:
-                net = ipaddress.ip_network(cidr, strict=False)
-            except ValueError:
+            # Host bits set — try to normalize
+            normalized = normalize_host_bits(cidr)
+            if normalized is None:
                 results.append(
                     _result(
                         rule_id="GA301",
@@ -949,14 +931,15 @@ def _check_cidrs(
                     rule_id="GA307",
                     severity=Severity.WARNING,
                     message=(
-                        f"CIDR {cidr!r} has host bits set and will be normalized to {str(net)!r}"
+                        f"CIDR {cidr!r} has host bits set and will be normalized to {normalized!r}"
                     ),
                     phase=phase,
                     ref=ref,
                     field="match.config.src_ip_ranges",
-                    suggestion=f"Use {str(net)!r} instead",
+                    suggestion=f"Use {normalized!r} instead",
                 )
             )
+            net = ipaddress.ip_network(normalized, strict=True)
         networks.append((cidr, net))
 
     for cidr, net in networks:
@@ -1005,38 +988,22 @@ def _ga305_overlap_check(
     against its immediate parent in sorted order. Catch-all entries are
     excluded — those are GA306's domain. Mirrors CF478, WA164, BN307.
     """
-
-    def _sweep(
-        items: list[tuple[str, ipaddress.IPv4Network | ipaddress.IPv6Network]],
-    ) -> None:
-        # Broadest first when network addresses are equal: that puts the
-        # containing network on the active stack before any contained ones.
-        sorted_items = sorted(items, key=lambda x: (int(x[1].network_address), x[1].prefixlen))
-        active: list[tuple[str, ipaddress.IPv4Network | ipaddress.IPv6Network]] = []
-        for cidr, net in sorted_items:
-            while active and int(active[-1][1].broadcast_address) < int(net.network_address):
-                active.pop()
-            if active:
-                parent_cidr, parent_net = active[-1]
-                if net == parent_net:
-                    msg = f"Duplicate CIDR: {cidr}"
-                else:
-                    msg = f"Redundant: {cidr} contained in {parent_cidr}"
-                results.append(
-                    _result(
-                        rule_id="GA305",
-                        severity=Severity.WARNING,
-                        message=msg,
-                        phase=phase,
-                        ref=ref,
-                        field="match.config.src_ip_ranges",
-                    )
-                )
-            active.append((cidr, net))
-
     filtered = [(v, n) for v, n in networks if str(n) not in CATCH_ALL_CIDRS]
-    _sweep([(v, n) for v, n in filtered if n.version == 4])
-    _sweep([(v, n) for v, n in filtered if n.version == 6])
+    for value, network, parent_value, parent_network in find_overlapping_cidrs(filtered):
+        if network == parent_network:
+            msg = f"Duplicate CIDR: {value}"
+        else:
+            msg = f"Redundant: {value} contained in {parent_value}"
+        results.append(
+            _result(
+                rule_id="GA305",
+                severity=Severity.WARNING,
+                message=msg,
+                phase=phase,
+                ref=ref,
+                field="match.config.src_ip_ranges",
+            )
+        )
 
 
 def _check_cel_length(

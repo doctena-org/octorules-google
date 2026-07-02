@@ -305,49 +305,6 @@ def find_contradictory_and(expr: str) -> list[tuple[str, list[str]]]:
     return results
 
 
-def find_tautological_or(expr: str) -> list[tuple[str, list[str]]]:
-    """Find OR chains where same field has contradictory != with different literals.
-
-    Example: a != "x" || a != "y" → always true (any value fails at least one).
-
-    Args:
-        expr: CEL expression string
-
-    Returns:
-        List of (field, [literal_values]) tuples
-    """
-    results = []
-    or_operands = _split_at_operator(expr, "||")
-    if len(or_operands) < 2:
-        return results
-
-    field_to_values = {}
-    for operand in or_operands:
-        operand = operand.strip()
-        parsed = _parse_single_comparison(operand)
-        if not parsed:
-            return []
-        op, lhs, rhs = parsed
-        if op != "!=":
-            return []
-        field = lhs.strip()
-        if not _is_simple_field_ref(field):
-            return []
-        if not _is_string_literal(rhs):
-            return []
-        value = _extract_string_literal_value(rhs)
-        if field not in field_to_values:
-            field_to_values[field] = []
-        field_to_values[field].append(value)
-
-    # Find fields with multiple different values (tautology)
-    for field, values in field_to_values.items():
-        if len(values) >= 2 and len(set(values)) > 1:
-            results.append((field, list(set(values))))
-
-    return results
-
-
 def has_mixed_and_or_at_depth_zero(expr: str) -> bool:
     """Check if expr has both && and || at depth zero without explicit parens grouping.
 
