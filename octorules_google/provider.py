@@ -228,6 +228,7 @@ class CloudArmorProvider:
     but not used for auth.
     """
 
+    NAMESPACE: str = "google"
     SUPPORTS: frozenset[str] = frozenset({"zone_discovery"})
 
     def __init__(

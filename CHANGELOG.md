@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Zone files can nest all Cloud Armor sections under a single `google:` block; the flat spelling is deprecated.
+
 ### Changed
-- Minimum `octorules` dependency: `>=0.30.0`.
+- Minimum `octorules` dependency: `>=0.32.0`.
+- Policy settings use the shared settings framework from octorules 0.32.0
+  (no output changes).
 
 ## [0.11.0] - 2026-06-11
 

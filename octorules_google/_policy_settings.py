@@ -10,8 +10,8 @@ settings in ``octorules_azure/_policy_settings.py``.
 """
 
 import logging
-from dataclasses import dataclass, field
 
+from octorules.extensions import SettingsChange, SettingsFormatter, SettingsPlan
 from octorules.registration import idempotent_registration
 
 log = logging.getLogger(__name__)
@@ -23,34 +23,18 @@ _DEFAULT_RULE_PRIORITY = 2147483647
 
 
 # ---------------------------------------------------------------------------
-# Data model for policy settings diffs
+# Data model for policy settings diffs (subclass core framework classes)
 # ---------------------------------------------------------------------------
-@dataclass
-class PolicySettingsChange:
+class PolicySettingsChange(SettingsChange):
     """A single field change in policy settings."""
 
-    field: str
-    current: object
-    desired: object
-
-    @property
-    def has_changes(self) -> bool:
-        return self.current != self.desired
+    pass
 
 
-@dataclass
-class PolicySettingsPlan:
+class PolicySettingsPlan(SettingsPlan):
     """Plan for all policy settings changes in a zone."""
 
-    changes: list[PolicySettingsChange] = field(default_factory=list)
-
-    @property
-    def has_changes(self) -> bool:
-        return any(c.has_changes for c in self.changes)
-
-    @property
-    def total_changes(self) -> int:
-        return sum(1 for c in self.changes if c.has_changes)
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -292,112 +276,24 @@ def _dump_policy_settings(scope, provider, out_dir):
 # ---------------------------------------------------------------------------
 # Format extension
 # ---------------------------------------------------------------------------
-class PolicySettingsFormatter:
-    """Formats policy settings diffs for plan output."""
+class PolicySettingsFormatter(SettingsFormatter):
+    """Formats policy settings diffs for plan output.
 
-    def format_text(self, plans: list, use_color: bool) -> list[str]:
-        from octorules._color import Pen
+    Subclasses the core SettingsFormatter with parameters fixed for
+    Google Cloud Armor policy settings:
+    - prefix: "policy_settings" (for labels like "policy_settings.field")
+    - phase: "policy_settings"
+    - provider_id: "gcloud_armor_policy_settings"
+    """
 
-        p = Pen(use_color)
-        lines: list[str] = []
-        for plan in plans:
-            if not isinstance(plan, PolicySettingsPlan) or not plan.has_changes:
-                continue
-            for change in plan.changes:
-                if not change.has_changes:
-                    continue
-                label = f"policy_settings.{change.field}"
-                line = f"  ~ {label}: {change.current!r} -> {change.desired!r}"
-                lines.append(p.warning(line))
-        return lines
-
-    def format_json(self, plans: list) -> list[dict]:
-        result: list[dict] = []
-        for plan in plans:
-            if not isinstance(plan, PolicySettingsPlan) or not plan.has_changes:
-                continue
-            changes = []
-            for change in plan.changes:
-                if not change.has_changes:
-                    continue
-                changes.append(
-                    {
-                        "field": change.field,
-                        "current": change.current,
-                        "desired": change.desired,
-                    }
-                )
-            if changes:
-                result.append({"changes": changes})
-        return result
-
-    def format_markdown(
-        self, plans: list, pending_diffs: list[list[tuple[str, object, object]]]
-    ) -> list[str]:
-        from octorules.formatter import _md_escape
-
-        lines: list[str] = []
-        for plan in plans:
-            if not isinstance(plan, PolicySettingsPlan) or not plan.has_changes:
-                continue
-            for change in plan.changes:
-                if not change.has_changes:
-                    continue
-                label = _md_escape(f"policy_settings.{change.field}")
-                cur = _md_escape(repr(change.current))
-                des = _md_escape(repr(change.desired))
-                lines.append(f"| ~ | {label} | | {cur} -> {des} |")
-        return lines
-
-    def format_html(self, plans: list, lines: list[str]) -> tuple[int, int, int, int]:
-        from html import escape as html_escape
-
-        from octorules.formatter import _HTML_TABLE_HEADER, _html_summary_row
-
-        total_modifies = 0
-        for plan in plans:
-            if not isinstance(plan, PolicySettingsPlan) or not plan.has_changes:
-                continue
-            lines.extend(_HTML_TABLE_HEADER)
-            plan_modifies = 0
-            for change in plan.changes:
-                if not change.has_changes:
-                    continue
-                plan_modifies += 1
-                label = html_escape(f"policy_settings.{change.field}")
-                cur = html_escape(repr(change.current))
-                des = html_escape(repr(change.desired))
-                lines.append("  <tr>")
-                lines.append("    <td>Modify</td>")
-                lines.append(f"    <td>{label}</td>")
-                lines.append(f"    <td>{cur} &rarr; {des}</td>")
-                lines.append("  </tr>")
-            lines.extend(_html_summary_row(0, 0, plan_modifies, 0))
-            lines.append("</table>")
-            total_modifies += plan_modifies
-        return 0, 0, total_modifies, 0
-
-    def format_report(self, plans: list, zone_has_drift: bool, phases_data: list[dict]) -> bool:
-        total_modifies = 0
-        for plan in plans:
-            if not isinstance(plan, PolicySettingsPlan) or not plan.has_changes:
-                continue
-            total_modifies += sum(1 for c in plan.changes if c.has_changes)
-        if total_modifies:
-            zone_has_drift = True
-            phases_data.append(
-                {
-                    "phase": "policy_settings",
-                    "provider_id": _EXT_KEY,
-                    "status": "drifted",
-                    "yaml_rules": 0,
-                    "live_rules": 0,
-                    "adds": 0,
-                    "removes": 0,
-                    "modifies": total_modifies,
-                }
-            )
-        return zone_has_drift
+    def __init__(self) -> None:
+        """Initialize with Google Cloud Armor policy settings parameters."""
+        super().__init__(
+            plan_type=PolicySettingsPlan,
+            prefix="policy_settings",
+            phase="policy_settings",
+            provider_id=_EXT_KEY,
+        )
 
 
 # ---------------------------------------------------------------------------

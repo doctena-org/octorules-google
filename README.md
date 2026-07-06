@@ -97,42 +97,49 @@ Rules are identified by their integer **priority** (mapped to `ref` in octorules
 
 ## Rule format
 
-Cloud Armor rules use a different structure from other providers. The `ref` field maps to the rule's integer priority:
+Cloud Armor rules nest under a single `google:` block. The `ref` field maps to the rule's integer priority:
 
 ```yaml
 # rules/my-security-policy.yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
-    description: "Block known bad IPs"
-    action: deny(403)
-    match:
-      versioned_expr: SRC_IPS_V1
-      config:
-        src_ip_ranges:
-          - "1.2.3.4/32"
-          - "5.6.7.0/24"
+google:
+  custom_rules:
+    - ref: "1000"
+      description: "Block known bad IPs"
+      action: deny(403)
+      match:
+        versioned_expr: SRC_IPS_V1
+        config:
+          src_ip_ranges:
+            - "1.2.3.4/32"
+            - "5.6.7.0/24"
 
-  - ref: "2000"
-    description: "Rate limit API endpoints"
-    action: throttle
-    match:
-      expr:
-        expression: "request.path.startsWith('/api/')"
-    rate_limit_options:
-      conform_action: allow
-      exceed_action: deny-429
-      rate_limit_threshold:
-        count: 100
-        interval_sec: 60
+    - ref: "2000"
+      description: "Rate limit API endpoints"
+      action: throttle
+      match:
+        expr:
+          expression: "request.path.startsWith('/api/')"
+      rate_limit_options:
+        conform_action: allow
+        exceed_action: deny-429
+        rate_limit_threshold:
+          count: 100
+          interval_sec: 60
 
-gcloud_armor_preconfigured_rules:
-  - ref: "3000"
-    description: "OWASP SQL injection protection"
-    action: deny(403)
-    match:
-      expr:
-        expression: "evaluatePreconfiguredWaf('sqli-v33-stable')"
+  preconfigured_rules:
+    - ref: "3000"
+      description: "OWASP SQL injection protection"
+      action: deny(403)
+      match:
+        expr:
+          expression: "evaluatePreconfiguredWaf('sqli-v33-stable')"
+
+  policy_settings:
+    ddosProtectionConfig:
+      ddosProtection: ADVANCED
 ```
+
+**Legacy flat spelling** (e.g., `gcloud_armor_custom_rules` at the top level) is deprecated. Use the nested `google:` block instead.
 
 ### CEL expressions
 
