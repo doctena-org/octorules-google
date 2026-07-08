@@ -13,15 +13,15 @@ Add a `# octorules:disable=RULE` comment immediately before a rule to suppress a
 **Per-rule suppression** -- suppresses the rule for a single ref:
 
 ```yaml
-gcloud_armor_custom_rules:
-  # octorules:disable=GA001
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
       config:
         src_ip_ranges:
-          - "1.2.3.4/32"
+        - 1.2.3.4/32
 ```
 
 **Multiple rules:**
@@ -154,11 +154,12 @@ Every Cloud Armor rule must have a `ref` field that maps to its integer priority
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
+google:
+  custom_rules:
   - action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
+        expression: origin.region_code == 'CN'
 ```
 
 **Fix:** Add a `ref` field with a unique integer priority string:
@@ -179,11 +180,12 @@ Every Cloud Armor rule must specify an `action` (e.g. `allow`, `deny(403)`, `thr
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
+        expression: origin.region_code == 'CN'
 ```
 
 **Fix:** Add an `action` field:
@@ -204,8 +206,9 @@ Every Cloud Armor rule must specify a `match` block defining which traffic the r
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
 ```
 
@@ -231,8 +234,9 @@ element (e.g. a string or integer) is always an authoring mistake.
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - "not a dict"         # <-- string instead of mapping
+google:
+  custom_rules:
+  - not a dict
 ```
 
 **Fix:** Replace the scalar with a proper rule mapping.
@@ -248,17 +252,18 @@ Two or more rules in the same phase share the same `ref` value. Each rule must h
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: allow
     match:
       expr:
-        expression: "true"
-  - ref: "1000"           # <-- duplicate
+        expression: 'true'
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
+        expression: origin.region_code == 'CN'
 ```
 
 **Fix:** Give each rule a unique `ref` (priority) value.
@@ -274,18 +279,20 @@ A phase key must map to a YAML list of rule mappings. A scalar, dict, or other n
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules: "not-a-list"
+google:
+  custom_rules: not-a-list
 ```
 
 **Fix:** Replace the value with a list of rule mappings:
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: allow
     match:
       expr:
-        expression: "true"
+        expression: 'true'
 ```
 
 ---
@@ -299,13 +306,14 @@ Each Cloud Armor rule has a fixed set of valid top-level fields (`ref`, `action`
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
-    typo_field: "value"
+        expression: origin.region_code == 'CN'
+    typo_field: value
 ```
 
 **Fix:** Remove or rename the unknown field. If you intended a different nesting level, move it to the correct location.
@@ -321,12 +329,13 @@ A CEL expression has leading or trailing whitespace that should be trimmed for c
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "  origin.region_code == 'CN'  "
+        expression: '  origin.region_code == ''CN''  '
 ```
 
 **Fix:** Remove leading and trailing whitespace:
@@ -349,12 +358,13 @@ A CEL comparison uses unnecessary negation that can be simplified. For example, 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "!(origin.ip == '1.2.3.4')"
+        expression: '!(origin.ip == ''1.2.3.4'')'
 ```
 
 **Fix:** Simplify the comparison:
@@ -375,12 +385,14 @@ An OR chain compares the same field against multiple literal values with equalit
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN' || origin.region_code == 'RU' || origin.region_code == 'KP'"
+        expression: origin.region_code == 'CN' || origin.region_code == 'RU' || origin.region_code
+          == 'KP'
 ```
 
 **Fix:** Use the `in` operator:
@@ -401,12 +413,13 @@ A CEL AND condition is impossible — the same field is compared for equality wi
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN' && origin.region_code == 'US'"
+        expression: origin.region_code == 'CN' && origin.region_code == 'US'
 ```
 
 **Fix:** Remove the contradictory condition or fix the logic.
@@ -422,12 +435,13 @@ A CEL expression mixes `&&` (AND) and `||` (OR) operators at the top parenthesis
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN' && request.method == 'POST' || request.path.startsWith('/api')"
+        expression: origin.region_code == 'CN' && request.method == 'POST' || request.path.startsWith('/api')
 ```
 
 **Fix:** Add explicit parentheses to clarify precedence:
@@ -448,12 +462,13 @@ The `ref` field must be a non-negative integer string representing the rule's pr
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "high-priority"
+google:
+  custom_rules:
+  - ref: high-priority
     action: deny(403)
     match:
       expr:
-        expression: "true"
+        expression: 'true'
 ```
 
 **Fix:** Use a non-negative integer string:
@@ -473,12 +488,13 @@ Cloud Armor priorities must be between 0 and 2,147,483,646 (inclusive). Priority
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "2147483647"
+google:
+  custom_rules:
+  - ref: '2147483647'
     action: allow
     match:
       expr:
-        expression: "true"
+        expression: 'true'
 ```
 
 **Fix:** Use a priority within the valid range:
@@ -498,17 +514,18 @@ Two or more rules share the same priority value. Cloud Armor requires each rule 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
-  - ref: "1000"
+        expression: origin.region_code == 'CN'
+  - ref: '1000'
     action: allow
     match:
       expr:
-        expression: "origin.region_code == 'US'"
+        expression: origin.region_code == 'US'
 ```
 
 **Fix:** Assign unique priorities to each rule. Space priorities by 10 or 100 (e.g. 1000, 1010, 1020) to leave room for future insertions.
@@ -524,17 +541,18 @@ A rule with a `"true"` CEL expression matches all traffic. Any rule with a highe
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "true"
-  - ref: "2000"
+        expression: 'true'
+  - ref: '2000'
     action: allow
     match:
       expr:
-        expression: "origin.region_code == 'US'"
+        expression: origin.region_code == 'US'
 ```
 
 **Fix:** Remove the unreachable rule, or give it a lower priority number (higher precedence) than the match-all rule. Remember: lower priority number = higher precedence in Cloud Armor.
@@ -550,17 +568,18 @@ Two or more rules use the same CEL expression (after whitespace normalization). 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
-  - ref: "2000"
+        expression: origin.region_code == 'CN'
+  - ref: '2000'
     action: allow
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
+        expression: origin.region_code == 'CN'
 ```
 
 **Fix:** Remove the duplicate or update one expression to match different traffic. If the rules intentionally use the same expression with different actions, combine them into a single rule or suppress with `# octorules:disable=GA104`.
@@ -576,12 +595,13 @@ Multiple rate-limit rules (`throttle` / `rate_based_ban`) use different `enforce
 **Triggers on:**
 
 ```yaml
-gcloud_armor_rate_rules:
-  - ref: "1000"
+google:
+  rate_rules:
+  - ref: '1000'
     action: throttle
     match:
       expr:
-        expression: "request.path.startsWith('/api/')"
+        expression: request.path.startsWith('/api/')
     rate_limit_options:
       conform_action: allow
       exceed_action: deny-429
@@ -589,11 +609,11 @@ gcloud_armor_rate_rules:
       rate_limit_threshold:
         count: 100
         interval_sec: 60
-  - ref: "2000"
+  - ref: '2000'
     action: throttle
     match:
       expr:
-        expression: "request.path.startsWith('/login')"
+        expression: request.path.startsWith('/login')
     rate_limit_options:
       conform_action: allow
       exceed_action: deny-429
@@ -616,17 +636,18 @@ The same preconfigured WAF rule set (e.g. `sqli-v33-stable`) appears in multiple
 **Triggers on:**
 
 ```yaml
-gcloud_armor_preconfigured_rules:
-  - ref: "3000"
+google:
+  preconfigured_rules:
+  - ref: '3000'
     action: deny(403)
     match:
       expr:
-        expression: "evaluatePreconfiguredWaf('sqli-v33-stable')"
-  - ref: "3001"
+        expression: evaluatePreconfiguredWaf('sqli-v33-stable')
+  - ref: '3001'
     action: deny(403)
     match:
       expr:
-        expression: "evaluatePreconfiguredWaf('sqli-v33-stable')"
+        expression: evaluatePreconfiguredWaf('sqli-v33-stable')
 ```
 
 **Fix:** Remove the duplicate rule or use a different WAF rule set in each.
@@ -646,13 +667,12 @@ Bare `deny` (without a status code) produces a targeted suggestion: "deny requir
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
-    action: block      # unknown action
-    # ...
-  - ref: "1001"
-    action: deny       # missing status code
-    # ...
+google:
+  custom_rules:
+  - ref: '1000'
+    action: block
+  - ref: '1001'
+    action: deny
 ```
 
 **Fix:** Use a valid action:
@@ -672,12 +692,13 @@ The `deny()` action only supports status codes 403, 404, 429, and 502. Other HTT
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(500)
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
+        expression: origin.region_code == 'CN'
 ```
 
 **Fix:** Use one of the valid deny status codes:
@@ -699,17 +720,17 @@ A match block must use exactly one of two forms: a CEL expression (`expr`) or IP
 **Triggers on:**
 
 ```yaml
-# Both forms present:
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'CN'"
+        expression: origin.region_code == 'CN'
       versioned_expr: SRC_IPS_V1
       config:
         src_ip_ranges:
-          - "1.2.3.0/24"
+        - 1.2.3.0/24
 ```
 
 **Fix:** Remove one of the two match forms. Use `expr` for CEL expressions or `config`+`versioned_expr` for IP-range matching.
@@ -725,14 +746,15 @@ An entry in `src_ip_ranges` is not valid CIDR notation. The value must be a vali
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
       config:
         src_ip_ranges:
-          - "not-a-cidr"
+        - not-a-cidr
 ```
 
 **Fix:** Use standard CIDR notation -- `10.0.0.0/24` not `10.0.0.0/33`. Common mistakes: prefix length exceeding 32 (IPv4) or 128 (IPv6), missing `/` prefix, or typos in the IP address.
@@ -753,12 +775,13 @@ The CEL expression has a syntax error detected by the cel-python parser. The rul
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code =="
+        expression: origin.region_code ==
 ```
 
 **Fix:** Check CEL syntax -- ensure quotes, parentheses, and operators are balanced. Common mistakes: unmatched `(` or `"`, missing `==` operator, or using `=` instead of `==`. Refer to the [Cloud Armor rules language reference](https://cloud.google.com/armor/docs/rules-language-reference).
@@ -774,12 +797,13 @@ The preconfigured WAF rule set name passed to `evaluatePreconfiguredWaf()` or `e
 **Triggers on:**
 
 ```yaml
-gcloud_armor_preconfigured_rules:
-  - ref: "3000"
+google:
+  preconfigured_rules:
+  - ref: '3000'
     action: deny(403)
     match:
       expr:
-        expression: "evaluatePreconfiguredWaf('nosuchruleset-v1-stable')"
+        expression: evaluatePreconfiguredWaf('nosuchruleset-v1-stable')
 ```
 
 **Fix:** Use a valid preconfigured WAF rule set name:
@@ -811,15 +835,16 @@ Two or more entries in `src_ip_ranges` overlap or are duplicates. One range cont
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
       config:
         src_ip_ranges:
-          - "10.0.0.0/8"
-          - "10.1.0.0/16"
+        - 10.0.0.0/8
+        - 10.1.0.0/16
 ```
 
 **Fix:** Remove the redundant (narrower) CIDR entry since it is already covered by the broader range. For example, if you have both `10.0.0.0/8` and `10.1.0.0/16`, remove the `/16` -- it is already contained within the `/8`.
@@ -835,14 +860,15 @@ A `/0` CIDR (e.g. `0.0.0.0/0` or `::/0`) matches all traffic. This is usually un
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
       config:
         src_ip_ranges:
-          - "0.0.0.0/0"
+        - 0.0.0.0/0
 ```
 
 **Fix:** Use a CEL match-all expression or narrow the CIDR range. If you truly intend to match all traffic, use a CEL `"true"` expression instead of `/0` -- it is more explicit and avoids confusion:
@@ -864,14 +890,15 @@ A CIDR in `src_ip_ranges` has host bits set that will be silently normalized by 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
       config:
         src_ip_ranges:
-          - "10.0.0.1/24"
+        - 10.0.0.1/24
 ```
 
 **Fix:** Use the normalized CIDR notation with host bits cleared:
@@ -892,12 +919,13 @@ The CEL expression references a dotted field name that is not in the set of know
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "source.ip == '1.2.3.4'"
+        expression: source.ip == '1.2.3.4'
 ```
 
 **Fix:** Use a known Cloud Armor field:
@@ -917,12 +945,13 @@ The CEL expression calls a function not in the set of known Cloud Armor function
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "customFunc(origin.ip)"
+        expression: customFunc(origin.ip)
 ```
 
 **Fix:** Use a supported Cloud Armor CEL function.
@@ -938,14 +967,15 @@ The `versioned_expr` field only accepts the value `SRC_IPS_V1`. Any other value 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V2
       config:
         src_ip_ranges:
-          - "1.2.3.0/24"
+        - 1.2.3.0/24
 ```
 
 **Fix:** Use the only valid value:
@@ -965,8 +995,9 @@ When `versioned_expr` is set, a `config` dict with `src_ip_ranges` must also be 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
@@ -993,8 +1024,9 @@ The match condition is empty -- either `src_ip_ranges` is an empty list or the C
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
@@ -1019,12 +1051,13 @@ Detected patterns:
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.region_code == 'USA'"
+        expression: origin.region_code == 'USA'
 ```
 
 **Fix:** Use 2-letter uppercase ISO country codes: `"US"`, not `"USA"` or `"us"`.
@@ -1042,12 +1075,13 @@ Valid methods: CONNECT, DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, TRACE.
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "request.method == 'GETT'"
+        expression: request.method == 'GETT'
 ```
 
 **Fix:** Use the correct HTTP method spelling: `"GET"`, not `"GETT"`.
@@ -1063,12 +1097,13 @@ Validates CIDR notation inside `inIpRange(origin.ip, "CIDR")` calls. Invalid CID
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "inIpRange(origin.ip, 'not-a-cidr')"
+        expression: inIpRange(origin.ip, 'not-a-cidr')
 ```
 
 **Fix:** Use valid CIDR notation: `"1.2.3.0/24"` or `"2001:db8::/32"`.
@@ -1084,12 +1119,13 @@ Detects type mismatches in CEL field comparisons. For example, `origin.ip` is a 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "origin.ip == 42"
+        expression: origin.ip == 42
 ```
 
 **Fix:** Use the correct literal type: `origin.ip == '1.2.3.4'` (string) or `origin.asn == 15169` (integer).
@@ -1107,12 +1143,13 @@ Only triggers when the literal contains mixed case (not all-lowercase or all-upp
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "request.path == '/Admin'"
+        expression: request.path == '/Admin'
 ```
 
 **Fix:** Use `matches()` with the `(?i)` flag for case-insensitive matching: `request.path.matches('(?i)/admin')`.
@@ -1128,12 +1165,13 @@ Flags private or reserved IP ranges (RFC 1918, loopback, link-local, ULA) inside
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "inIpRange(origin.ip, '192.168.1.0/24')"
+        expression: inIpRange(origin.ip, '192.168.1.0/24')
 ```
 
 **Fix:** Use public IP ranges, or suppress with `# octorules:disable=GA320` if intentional.
@@ -1149,13 +1187,14 @@ Validates the `header_action` field structure. Checks that `header_action` is a 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: allow
     match:
       expr:
-        expression: "true"
-    header_action: "not-a-dict"
+        expression: 'true'
+    header_action: not-a-dict
 ```
 
 or:
@@ -1187,13 +1226,14 @@ The `network_match` field, if present, must be a dict. This field is used for ne
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "true"
-    network_match: "not-a-dict"
+        expression: 'true'
+    network_match: not-a-dict
 ```
 
 **Fix:** Provide `network_match` as a dict:
@@ -1215,18 +1255,18 @@ Validates the `preconfigured_waf_config` field structure. Checks that it is a di
 **Triggers on:**
 
 ```yaml
-gcloud_armor_preconfigured_rules:
-  - ref: "3000"
+google:
+  preconfigured_rules:
+  - ref: '3000'
     action: deny(403)
     match:
       expr:
-        expression: "evaluatePreconfiguredWaf('sqli-v33-stable')"
+        expression: evaluatePreconfiguredWaf('sqli-v33-stable')
     preconfigured_waf_config:
       exclusions:
-        - request_header:
-            - op: EQUALS
-              val: "X-Custom"
-          # missing target_rule_set
+      - request_header:
+        - op: EQUALS
+          val: X-Custom
 ```
 
 **Fix:** Add `target_rule_set` to each exclusion entry:
@@ -1253,12 +1293,13 @@ Context-aware: only flags unescaped `.` on hostname/URI/path/cert-DN fields; ski
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "request.path.matches('admin.*')"
+        expression: request.path.matches('admin.*')
 ```
 
 **Fix:** Escape metacharacters or use a more specific pattern:
@@ -1280,12 +1321,13 @@ A CEL `.matches()` call uses a fully-anchored literal regex (e.g., `^foo$`) wher
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: "request.path.matches('^/admin$')"
+        expression: request.path.matches('^/admin$')
 ```
 
 **Fix:** Use the equality operator instead:
@@ -1307,12 +1349,13 @@ Rules with `action: throttle` or `action: rate_based_ban` must include a `rate_l
 **Triggers on:**
 
 ```yaml
-gcloud_armor_rate_rules:
-  - ref: "1000"
+google:
+  rate_rules:
+  - ref: '1000'
     action: throttle
     match:
       expr:
-        expression: "request.path.startsWith('/api/')"
+        expression: request.path.startsWith('/api/')
 ```
 
 **Fix:** Add `rate_limit_options`:
@@ -1337,12 +1380,13 @@ Rules with `action: redirect` must include a `redirect_options` block specifying
 **Triggers on:**
 
 ```yaml
-gcloud_armor_redirect_rules:
-  - ref: "1000"
+google:
+  redirect_rules:
+  - ref: '1000'
     action: redirect
     match:
       expr:
-        expression: "request.path.startsWith('/old/')"
+        expression: request.path.startsWith('/old/')
 ```
 
 **Fix:** Add `redirect_options`:
@@ -1364,12 +1408,13 @@ The `redirect_options.type` value must be either `GOOGLE_RECAPTCHA` or `EXTERNAL
 **Triggers on:**
 
 ```yaml
-gcloud_armor_redirect_rules:
-  - ref: "1000"
+google:
+  redirect_rules:
+  - ref: '1000'
     action: redirect
     match:
       expr:
-        expression: "true"
+        expression: 'true'
     redirect_options:
       type: PERMANENT_301
 ```
@@ -1393,12 +1438,13 @@ The `rate_limit_options` block is missing one or more required fields: `conform_
 **Triggers on:**
 
 ```yaml
-gcloud_armor_rate_rules:
-  - ref: "1000"
+google:
+  rate_rules:
+  - ref: '1000'
     action: throttle
     match:
       expr:
-        expression: "true"
+        expression: 'true'
     rate_limit_options:
       conform_action: allow
 ```
@@ -1425,12 +1471,13 @@ When `redirect_options.type` is `EXTERNAL_302`, a `target` URL must be provided 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_redirect_rules:
-  - ref: "1000"
+google:
+  redirect_rules:
+  - ref: '1000'
     action: redirect
     match:
       expr:
-        expression: "true"
+        expression: 'true'
     redirect_options:
       type: EXTERNAL_302
 ```
@@ -1822,12 +1869,13 @@ When using `rate_based_ban` with `exceed_action: redirect`, setting `enforce_on_
 **Triggers on:**
 
 ```yaml
-gcloud_armor_rate_rules:
-  - ref: "1000"
+google:
+  rate_rules:
+  - ref: '1000'
     action: rate_based_ban
     match:
       expr:
-        expression: "true"
+        expression: 'true'
     rate_limit_options:
       conform_action: allow
       exceed_action: redirect
@@ -1837,7 +1885,7 @@ gcloud_armor_rate_rules:
         interval_sec: 60
       exceed_redirect_options:
         type: EXTERNAL_302
-        target: "https://example.com/banned"
+        target: https://example.com/banned
 ```
 
 **Fix:** Add `enforce_on_key`:
@@ -1898,12 +1946,13 @@ Rules with `action: rate_based_ban` must specify `ban_duration_sec` in `rate_lim
 **Triggers on:**
 
 ```yaml
-gcloud_armor_rate_rules:
-  - ref: "1000"
+google:
+  rate_rules:
+  - ref: '1000'
     action: rate_based_ban
     match:
       expr:
-        expression: "true"
+        expression: 'true'
     rate_limit_options:
       conform_action: allow
       exceed_action: deny-403
@@ -1996,12 +2045,13 @@ The `ban_duration_sec` field was specified on a `throttle` rule, but it only app
 **Triggers on:**
 
 ```yaml
-gcloud_armor_rate_rules:
-  - ref: "1000"
+google:
+  rate_rules:
+  - ref: '1000'
     action: throttle
     match:
       expr:
-        expression: "true"
+        expression: 'true'
     rate_limit_options:
       conform_action: allow
       exceed_action: deny-429
@@ -2093,14 +2143,15 @@ A CIDR in `src_ip_ranges` falls within a private or reserved IP range (RFC 1918,
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
       config:
         src_ip_ranges:
-          - "192.168.1.0/24"
+        - 192.168.1.0/24
 ```
 
 **Fix:** Use public IP ranges that match actual client traffic, or remove the rule if it was added in error. If you are testing locally, suppress with `# octorules:disable=GA503`. Private ranges like `10.x`, `172.16.x`, and `192.168.x` will never match real internet traffic in Cloud Armor.
@@ -2116,12 +2167,13 @@ A CEL `request.headers["..."]` bracket access uses a header name with uppercase 
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       expr:
-        expression: 'request.headers["X-Custom-Header"] == "value"'
+        expression: request.headers["X-Custom-Header"] == "value"
 ```
 
 **Fix:** Use lowercase header names:
@@ -2143,14 +2195,15 @@ Note: `enforce_on_key` is not deprecated — it is a valid alternative to `enfor
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "1000"
+google:
+  custom_rules:
+  - ref: '1000'
     action: deny(403)
     match:
       versioned_expr: SRC_IPS_V1
       config:
         src_ip_ranges:
-          - "1.2.3.0/24"
+        - 1.2.3.0/24
 ```
 
 **Fix:** Migrate to CEL expressions if possible:
@@ -2205,12 +2258,13 @@ The rule has `preview: true`, meaning it logs matches but does not enforce the a
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "5000"
+google:
+  custom_rules:
+  - ref: '5000'
     action: deny(403)
     preview: true
     match:
-      expr: 'origin.region_code == "CN"'
+      expr: origin.region_code == "CN"
 ```
 
 **Fix:** Set `preview: false` or remove the `preview` field when the rule is ready for enforcement.
@@ -2230,11 +2284,12 @@ Detected patterns:
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "6000"
+google:
+  custom_rules:
+  - ref: '6000'
     action: deny(403)
     match:
-      expr: "true"
+      expr: 'true'
 ```
 
 **Fix:** Add a specific match condition, or use `# octorules:disable=GA601` if the catch-all is intentional. A common pattern is a low-priority catch-all `deny(403)` as the default rule -- suppress the warning if this is the intended behavior.
@@ -2250,11 +2305,12 @@ The rule's CEL expression always evaluates to false, so the rule never matches a
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "7000"
+google:
+  custom_rules:
+  - ref: '7000'
     action: deny(403)
     match:
-      expr: "false"
+      expr: 'false'
 ```
 
 **Fix:** Fix the expression to match the intended traffic, or remove the rule. Common causes: leftover `"false"` from debugging, or a typo that makes the condition logically impossible (e.g. `origin.region_code == 'XX'` with a non-existent country code).
@@ -2268,12 +2324,13 @@ The rule has `enabled: false`. Disabled rules don't match traffic but are retain
 **Triggers on:**
 
 ```yaml
-gcloud_armor_custom_rules:
-  - ref: "8000"
+google:
+  custom_rules:
+  - ref: '8000'
     enabled: false
     action: deny(403)
     match:
-      expr: "origin.region_code == 'CN'"
+      expr: origin.region_code == 'CN'
 ```
 
 **Note:** A disabled rule is not an error. It's useful for preserving rules during development or temporary defeatures without deleting them.

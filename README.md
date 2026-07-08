@@ -88,10 +88,10 @@ supported phase and key. Copy it as a starting point.
 
 | octorules phase | Cloud Armor concept |
 |---|---|
-| `gcloud_armor_custom_rules` | Custom rules (IP match, geo match, CEL expressions) |
-| `gcloud_armor_rate_rules` | Rate-limiting rules (throttle / rate_based_ban) |
-| `gcloud_armor_preconfigured_rules` | Preconfigured WAF rules (OWASP ModSecurity, etc.) |
-| `gcloud_armor_redirect_rules` | Redirect rules (302 response) |
+| `google.custom_rules` | Custom rules (IP match, geo match, CEL expressions) |
+| `google.rate_rules` | Rate-limiting rules (throttle / rate_based_ban) |
+| `google.preconfigured_rules` | Preconfigured WAF rules (OWASP ModSecurity, etc.) |
+| `google.redirect_rules` | Redirect rules (302 response) |
 
 Rules are identified by their integer **priority** (mapped to `ref` in octorules). All phases require `action` to be specified explicitly (no default action).
 
@@ -138,8 +138,6 @@ google:
     ddosProtectionConfig:
       ddosProtection: ADVANCED
 ```
-
-**Legacy flat spelling** (e.g., `gcloud_armor_custom_rules` at the top level) is deprecated. Use the nested `google:` block instead.
 
 ### CEL expressions
 

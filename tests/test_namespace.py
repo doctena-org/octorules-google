@@ -4,11 +4,10 @@ Verifies that the google namespace is properly registered with octorules
 and that zone files can be written in both nested and flat formats.
 """
 
-import pytest
-
-import octorules_google  # noqa: F401 - triggers namespace registration
 from octorules.config import normalize_zone_format
 from octorules.phases import PROVIDER_NAMESPACES
+
+import octorules_google  # noqa: F401 - triggers namespace registration
 
 
 class TestGoogleNamespace:

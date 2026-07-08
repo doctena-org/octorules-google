@@ -291,8 +291,6 @@ class PolicySettingsFormatter(SettingsFormatter):
         super().__init__(
             plan_type=PolicySettingsPlan,
             prefix="policy_settings",
-            phase="policy_settings",
-            provider_id=_EXT_KEY,
         )
 
 

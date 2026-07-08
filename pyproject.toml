@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "octorules-google"
-version = "0.11.0"
+version = "0.12.0"
 description = "Google Cloud Armor provider for octorules"
 license = "Apache-2.0"
 requires-python = ">=3.10"
@@ -49,6 +49,7 @@ Issues = "https://github.com/doctena-org/octorules-google/issues"
 google = "octorules_google:CloudArmorProvider"
 
 [tool.setuptools.packages.find]
+include = ["octorules_google*"]
 
 [tool.ruff]
 target-version = "py310"
