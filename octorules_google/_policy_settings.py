@@ -326,13 +326,9 @@ class PolicySettingsExtension(ProviderExtension):
 def register_policy_settings() -> None:
     """Register all policy settings hooks with the core extension system."""
     from octorules.extensions import (
-        register_apply_extension,
         register_format_extension,
-        register_plan_zone_hook,
         register_validate_extension,
     )
 
-    register_plan_zone_hook(_prefetch_policy_settings, _finalize_policy_settings)
-    register_apply_extension(_EXT_KEY, _apply_policy_settings)
     register_format_extension(_EXT_KEY, PolicySettingsFormatter())
     register_validate_extension(_validate_policy_settings)
