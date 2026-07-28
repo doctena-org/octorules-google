@@ -593,7 +593,7 @@ class TestDumpExtension:
             "default_rule_action": "allow",
             "ddos_protection_config": {"ddos_protection": "STANDARD"},
         }
-        result = _dump_policy_settings(_scope(), provider, None)
+        result = _dump_policy_settings(_scope(), provider)
         assert "gcloud_armor_policy_settings" in result
         assert result["gcloud_armor_policy_settings"]["default_rule_action"] == "allow"
 
@@ -602,13 +602,13 @@ class TestDumpExtension:
 
         provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.side_effect = ProviderError("down")
-        result = _dump_policy_settings(_scope(), provider, None)
+        result = _dump_policy_settings(_scope(), provider)
         assert result is None
 
     def test_dump_empty_settings(self):
         provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.return_value = {}
-        result = _dump_policy_settings(_scope(), provider, None)
+        result = _dump_policy_settings(_scope(), provider)
         assert result is None
 
     def test_dump_auth_error_propagates(self):
@@ -617,7 +617,7 @@ class TestDumpExtension:
         provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.side_effect = ProviderAuthError("forbidden")
         with pytest.raises(ProviderAuthError):
-            _dump_policy_settings(_scope(), provider, None)
+            _dump_policy_settings(_scope(), provider)
 
 
 # ---------------------------------------------------------------------------

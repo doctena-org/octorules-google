@@ -257,7 +257,7 @@ def _validate_policy_settings(desired, zone_name, errors, lines):
         )
 
 
-def _dump_policy_settings(scope, provider, out_dir):
+def _dump_policy_settings(scope, provider):
     """Export current policy settings to dump output."""
     from octorules.provider.exceptions import ProviderAuthError, ProviderError
 
@@ -302,7 +302,6 @@ def register_policy_settings() -> None:
     """Register all policy settings hooks with the core extension system."""
     from octorules.extensions import (
         register_apply_extension,
-        register_dump_extension,
         register_format_extension,
         register_plan_zone_hook,
         register_validate_extension,
@@ -312,4 +311,3 @@ def register_policy_settings() -> None:
     register_apply_extension(_EXT_KEY, _apply_policy_settings)
     register_format_extension(_EXT_KEY, PolicySettingsFormatter())
     register_validate_extension(_validate_policy_settings)
-    register_dump_extension(_dump_policy_settings)

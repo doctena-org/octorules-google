@@ -628,3 +628,16 @@ class CloudArmorProvider:
     ) -> dict[str, dict]:
         """Return empty dict; Cloud Armor does not support lists."""
         return {}
+
+    # --- Dump ---
+
+    def dump_extra_sections(self, scope: Scope) -> dict:
+        """Cloud Armor-owned settings sections for the dumped zone file.
+
+        Called only with this provider, so a section can never be requested
+        from a provider that cannot fetch it — the reason dump is a method
+        here and not an extension registry.
+        """
+        from octorules_google._policy_settings import _dump_policy_settings
+
+        return _dump_policy_settings(scope, self) or {}
