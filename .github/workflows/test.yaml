@@ -12,12 +12,43 @@ permissions:
   contents: read
 
 jobs:
+  # The Python matrix lives once, in octorules' .ci-config.json, so a version
+  # bump is one edit rather than one per repo. Pinned to a tag: reading main
+  # would let a bad commit there break every provider's CI at once. Falls back
+  # to this repo's checked-in copy, because octodns's equivalent has no --fail,
+  # no retry and no fallback, so one raw.githubusercontent blip blocks every PR.
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      json: ${{ steps.load.outputs.json }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: load
+        env:
+          CI_CONFIG_REF: v0.33.0
+        run: |
+          url="https://raw.githubusercontent.com/doctena-org/octorules/${CI_CONFIG_REF}/.ci-config.json"
+          if curl -fsSL --retry 3 --retry-all-errors --max-time 20 -o fetched.json "$url" \
+             && python -c "import json,sys; json.load(open('fetched.json'))"; then
+            echo "Using ${CI_CONFIG_REF} .ci-config.json from octorules"
+          else
+            echo "::warning::Could not fetch ${CI_CONFIG_REF} .ci-config.json; using the checked-in copy"
+            cp .ci-config.json fetched.json
+          fi
+          {
+            echo 'json<<CI_CONFIG_EOF'
+            cat fetched.json
+            echo CI_CONFIG_EOF
+          } >> "$GITHUB_OUTPUT"
+
   test:
+    needs: config
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ${{ fromJson(needs.config.outputs.json).python_versions_active }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
