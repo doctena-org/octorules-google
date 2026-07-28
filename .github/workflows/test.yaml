@@ -30,7 +30,7 @@ jobs:
         run: |
           url="https://raw.githubusercontent.com/doctena-org/octorules/${CI_CONFIG_REF}/.ci-config.json"
           if curl -fsSL --retry 3 --retry-all-errors --max-time 20 -o fetched.json "$url" \
-             && python -c "import json,sys; json.load(open('fetched.json'))"; then
+             && python3 -c "import json; json.load(open('fetched.json'))"; then
             echo "Using ${CI_CONFIG_REF} .ci-config.json from octorules"
           else
             echo "::warning::Could not fetch ${CI_CONFIG_REF} .ci-config.json; using the checked-in copy"
