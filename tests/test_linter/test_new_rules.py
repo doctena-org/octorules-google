@@ -1,4 +1,4 @@
-"""Tests for GA328, GA329, GA529 rules and CEL regex extraction."""
+"""Tests for GA328, GA329 rules and CEL regex extraction."""
 
 from octorules.linter.engine import LintContext
 
@@ -333,69 +333,34 @@ class TestGA329AnchoredLiteralRegex:
         assert len(ga329) == 0
 
 
-class TestGA529DeprecatedVersionedExpr:
-    """Tests for GA529: deprecated versioned_expr field."""
+class TestVersionedExprIsNotFlagged:
+    """GA529 claimed versioned_expr was deprecated. Google's compute API
+    discovery document (revision 20260722) carries no deprecation flag and no
+    deprecation prose for SecurityPolicyRuleMatcher.versionedExpr, nor for its
+    only enum value SRC_IPS_V1 — while it does flag 16 other fields, one of
+    them in the same SecurityPolicy schema family. The rule asserted a
+    deprecation the vendor does not declare, so it was removed."""
 
-    def test_versioned_expr_deprecated(self):
-        """versioned_expr field triggers warning."""
-        ctx = LintContext()
-        rules_data = {
-            "google.custom_rules": [
-                {
-                    "ref": "rule-1",
-                    "action": "allow",
-                    "match": {"versioned_expr": "v1"},
-                }
-            ]
-        }
+    def test_versioned_expr_produces_no_finding(self):
         from octorules_google.linter._plugin import google_lint
 
-        google_lint(rules_data, ctx)
-        ga529 = [r for r in ctx.results if r.rule_id == "GA529"]
-        assert len(ga529) == 1
-        assert "deprecated" in ga529[0].message
-        assert "CEL" in ga529[0].message
-
-    def test_cel_expr_no_warning(self):
-        """CEL expr field should not trigger GA529."""
         ctx = LintContext()
-        rules_data = {
-            "google.custom_rules": [
-                {
-                    "ref": "rule-1",
-                    "action": "allow",
-                    "match": {"expr": {"expression": 'request.path.matches("foo")'}},
-                }
-            ]
-        }
-        from octorules_google.linter._plugin import google_lint
-
-        google_lint(rules_data, ctx)
-        ga529 = [r for r in ctx.results if r.rule_id == "GA529"]
-        assert len(ga529) == 0
-
-    def test_multiple_rules_with_versioned_expr(self):
-        """Each rule with versioned_expr should get a warning."""
-        ctx = LintContext()
-        rules_data = {
-            "google.custom_rules": [
-                {
-                    "ref": "rule-1",
-                    "action": "allow",
-                    "match": {"versioned_expr": "v1"},
-                },
-                {
-                    "ref": "rule-2",
-                    "action": "deny",
-                    "match": {"versioned_expr": "v2"},
-                },
-            ]
-        }
-        from octorules_google.linter._plugin import google_lint
-
-        google_lint(rules_data, ctx)
-        ga529 = [r for r in ctx.results if r.rule_id == "GA529"]
-        assert len(ga529) == 2
+        google_lint(
+            {
+                "google.custom_rules": [
+                    {
+                        "ref": "rule-1",
+                        "action": "allow",
+                        "match": {
+                            "versioned_expr": "SRC_IPS_V1",
+                            "config": {"src_ip_ranges": ["192.0.2.0/24"]},
+                        },
+                    }
+                ]
+            },
+            ctx,
+        )
+        assert [r for r in ctx.results if r.rule_id == "GA529"] == []
 
 
 class TestGA027LeadingTrailingWhitespace:

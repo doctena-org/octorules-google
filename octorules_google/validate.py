@@ -114,7 +114,6 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA501",
         "GA502",
         "GA503",
-        "GA529",
         "GA600",
         "GA601",
         "GA602",
@@ -495,7 +494,6 @@ def validate_rules(rules: list[dict], *, phase: str = "") -> list[LintResult]:
     _check_dead_rules(rules, results, phase)
     _check_inconsistent_enforce_on_key(seen_enforce_on_keys, results, phase)
     _check_duplicate_waf_rulesets(seen_waf_rulesets, results, phase)
-    _check_deprecated_versioned_expr(rules, results, phase)
 
     return results
 
@@ -1383,40 +1381,6 @@ def _check_unnecessary_regex(
                 suggestion=f'Replace with: {field_name} == "{literal}"',
             )
         )
-
-
-def _check_deprecated_versioned_expr(
-    rules: list[dict],
-    results: list[LintResult],
-    phase: str,
-) -> None:
-    """GA529: Flag deprecated versioned_expr field.
-
-    versioned_expr is deprecated in favor of CEL expressions (match.expr).
-    """
-    for rule in rules:
-        if not isinstance(rule, dict):
-            continue
-        ref = rule.get("ref", "unknown")
-        match = rule.get("match", {})
-        if not isinstance(match, dict):
-            continue
-        # Flag versioned_expr regardless of value — it's deprecated
-        if "versioned_expr" in match:
-            results.append(
-                _result(
-                    rule_id="GA529",
-                    severity=Severity.WARNING,
-                    message=(
-                        "Field 'versioned_expr' is deprecated; use 'match.expr' "
-                        "(CEL expressions) instead"
-                    ),
-                    phase=phase,
-                    ref=ref,
-                    field="match.versioned_expr",
-                    suggestion="Migrate to CEL expressions in match.expr",
-                )
-            )
 
 
 def _check_cel_sensitivity(

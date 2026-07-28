@@ -1,7 +1,7 @@
 """Policy settings management for Google Cloud Armor security policies.
 
 These are non-phase YAML sections handled via extension hooks:
-- ``gcloud_armor_policy_settings`` — adaptive protection, advanced options,
+- ``google.policy_settings`` — adaptive protection, advanced options,
   DDoS config, and the default rule action
 
 Uses plan_zone_hook (prefetch + finalize), apply_extension, format_extension,
@@ -186,7 +186,7 @@ def _apply_policy_settings(zp, plans, scope, provider):
 
 
 def _validate_policy_settings(desired, zone_name, errors, lines):
-    """Validate gcloud_armor_policy_settings offline."""
+    """Validate google.policy_settings offline."""
     settings = desired.get(_EXT_KEY)
     if not isinstance(settings, dict):
         return

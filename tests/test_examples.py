@@ -25,7 +25,6 @@ EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 # test exists to force.
 EXPECTED_NON_ERRORS = {
     "GA503": 2,
-    "GA529": 2,
     "GA601": 1,
 }
 

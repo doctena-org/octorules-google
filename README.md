@@ -164,7 +164,7 @@ match:
 
 ## Linting
 
-87 Cloud Armor-specific lint rules (GA prefix) covering structure, expressions, actions, rate limiting, redirects, sub-structure validation, and cross-rule analysis:
+86 Cloud Armor-specific lint rules (GA prefix) covering structure, expressions, actions, rate limiting, redirects, sub-structure validation, and cross-rule analysis:
 
 | Prefix | Category | Rules |
 |--------|----------|-------|
@@ -174,7 +174,7 @@ match:
 | GA300-GA329 | Match / expression / CEL / CIDR | 24 |
 | GA400-GA433 | Rate limit / redirect / action parameters | 32 |
 | GA500-GA503 | Description / cross-rule checks | 4 |
-| GA526, GA529 | Match (continued) | 2 |
+| GA526 | Match (continued) | 1 |
 | GA600-GA603 | Best practice | 4 |
 
 ```bash
@@ -187,7 +187,7 @@ Lint rules are registered automatically when octorules-google is installed. CEL 
 
 - **Non-atomic updates:** Cloud Armor does not support atomic bulk rule replacement. `put_phase_rules` patches existing rules in place, adds new rules, then removes stale rules — so the policy never has *fewer* rules than intended. Each API call is retried for transient errors with exponential backoff. If an operation fails after retries, partial progress is logged and the next sync will reconcile.
 - **Policy creation/deletion:** octorules-google manages rules within existing security policies. Creating or deleting policies (and attaching them to backend services) should be done via `gcloud` or Terraform.
-- **Policy settings require the extension.** Policy-level settings (`adaptive_protection_config`, `advanced_options_config`, `ddos_protection_config`, `default_rule_action`, `recaptcha_options_config`) are managed via the `gcloud_armor_policy_settings` extension. Without the extension enabled, these settings should be managed via `gcloud` or Terraform.
+- **Policy creation is out of scope, policy settings are not.** Policy-level settings (`adaptive_protection_config`, `advanced_options_config`, `ddos_protection_config`, `default_rule_action`, `recaptcha_options_config`) are managed under `google: policy_settings:` in the zone file. Anything above that level — creating or deleting the policy itself — belongs to `gcloud` or Terraform.
 
 > **Note:** Per-rule rate limiting fields (`enforceOnKey`, `enforceOnKeyConfigs`, `banDurationSec`), header actions (`headerAction`), and CEL functions like `evaluateThreatIntelligence()` are already supported — they pass through as-is in the rule dict.
 

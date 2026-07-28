@@ -1,6 +1,6 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **87 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **86 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
 
 These rules are registered automatically when `octorules-google` is installed. They run alongside any core and other provider rules during `octorules lint`.
 
@@ -135,7 +135,6 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA502](#ga502--rule-count-exceeds-tier-limit) | Rule count exceeds tier limit | WARNING |
 | [GA503](#ga503--privatereserved-ip-range-in-src_ip_ranges) | Private/reserved IP range in src_ip_ranges | WARNING |
 | [GA526](#ga526--http-header-name-should-be-lowercase) | HTTP header name should be lowercase in bracket access | INFO |
-| [GA529](#ga529--deprecated-field-or-versioned_expr-value) | Deprecated field or versioned_expr value detected | WARNING |
 | [GA600](#ga600--rule-is-in-preview-mode) | Rule is in preview mode (preview: true) | INFO |
 | [GA601](#ga601--expression-is-always-true) | Expression is always true — this is a catch-all rule | WARNING |
 | [GA602](#ga602--expression-is-always-false) | Expression is always false — rule never matches | WARNING |
@@ -2182,36 +2181,6 @@ google:
         expression: 'request.headers["x-custom-header"] == "value"'
 ```
 
----
-
-### GA529 -- Deprecated field or versioned_expr value detected
-
-**Severity:** WARNING
-
-The `versioned_expr` field is deprecated. Use CEL expressions (`match.expr`) instead for more flexible and maintainable rules.
-
-Note: `enforce_on_key` is not deprecated — it is a valid alternative to `enforce_on_key_configs` for rate-limiting rules.
-
-**Triggers on:**
-
-```yaml
-google:
-  custom_rules:
-  - ref: '1000'
-    action: deny(403)
-    match:
-      versioned_expr: SRC_IPS_V1
-      config:
-        src_ip_ranges:
-        - 1.2.3.0/24
-```
-
-**Fix:** Migrate to CEL expressions if possible:
-
-```yaml
-      expr:
-        expression: "inIpRange(origin.ip, '1.2.3.0/24')"
-```
 
 ---
 

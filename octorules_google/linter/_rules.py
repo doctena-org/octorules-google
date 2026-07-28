@@ -255,12 +255,6 @@ GA526 = RuleMeta(
 GA500 = RuleMeta(
     "GA500", "description", "Description exceeds 1024 character limit", Severity.WARNING
 )
-GA529 = RuleMeta(
-    "GA529",
-    "match",
-    "Deprecated field or versioned_expr value detected",
-    Severity.WARNING,
-)
 GA501 = RuleMeta(
     "GA501", "cross_rule", "Regex rule count exceeds standard tier limit (10)", Severity.WARNING
 )
