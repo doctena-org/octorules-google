@@ -11,7 +11,7 @@ settings in ``octorules_azure/_policy_settings.py``.
 
 import logging
 
-from octorules.extensions import SettingsChange, SettingsFormatter, SettingsPlan
+from octorules.extensions import ProviderExtension, SettingsChange, SettingsFormatter, SettingsPlan
 from octorules.registration import idempotent_registration
 
 log = logging.getLogger(__name__)
@@ -292,6 +292,31 @@ class PolicySettingsFormatter(SettingsFormatter):
             plan_type=PolicySettingsPlan,
             prefix="policy_settings",
         )
+
+
+# ---------------------------------------------------------------------------
+# Extension
+# ---------------------------------------------------------------------------
+class PolicySettingsExtension(ProviderExtension):
+    """Cloud Armor policy-level settings."""
+
+    section = "gcloud_armor_policy_settings"
+    formatter = PolicySettingsFormatter()
+
+    def prefetch(self, desired, scope, provider):
+        return _prefetch_policy_settings(desired, scope, provider)
+
+    def finalize(self, zp, desired, scope, provider, ctx):
+        return _finalize_policy_settings(zp, desired, scope, provider, ctx)
+
+    def apply(self, zp, plans, scope, provider):
+        return _apply_policy_settings(zp, plans, scope, provider)
+
+    def dump(self, scope, provider):
+        return _dump_policy_settings(scope, provider)
+
+    def validate(self, desired, zone_name, errors, lines):
+        return _validate_policy_settings(desired, zone_name, errors, lines)
 
 
 # ---------------------------------------------------------------------------
