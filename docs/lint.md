@@ -1,6 +1,6 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **86 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **87 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
 
 These rules are registered automatically when `octorules-google` is installed. They run alongside any core and other provider rules during `octorules lint`.
 
@@ -62,7 +62,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA020](#ga020--unknown-top-level-rule-field) | Unknown top-level rule field | ERROR |
 | [GA027](#ga027--leadingtrailing-whitespace-in-matchexprexpression) | Leading/trailing whitespace in match.expr.expression | INFO |
 | [GA100](#ga100--invalid-priority-must-be-non-negative-integer) | Invalid priority (must be non-negative integer) | ERROR |
-| [GA101](#ga101--priority-out-of-range-0-2147483646) | Priority out of range (0-2147483646) | ERROR |
+| [GA101](#ga101--priority-out-of-range-0-2147483646) | Priority out of range, or the default rule's reserved priority | ERROR |
 | [GA102](#ga102--duplicate-priority) | Duplicate priority | ERROR |
 | [GA103](#ga103--unreachable-rule-after-match-all) | Unreachable rule after match-all | WARNING |
 | [GA104](#ga104--duplicate-cel-expression-across-rules) | Duplicate CEL expression across rules | WARNING |
@@ -82,6 +82,7 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA305](#ga305--overlapping-or-duplicate-cidrs) | Overlapping or duplicate CIDRs | WARNING |
 | [GA306](#ga306--0-cidr-matches-all-traffic) | /0 CIDR matches all traffic | WARNING |
 | [GA307](#ga307--cidr-host-bits-normalization) | CIDR has host bits set (will be normalized) | WARNING |
+| [GA308](#ga308--src_ip_ranges-exceeds-the-10-range-maximum) | src_ip_ranges exceeds the 10-range maximum | ERROR |
 | [GA310](#ga310--unknown-field-reference-in-cel-expression) | Unknown field reference in CEL expression | WARNING |
 | [GA311](#ga311--unknown-function-in-cel-expression) | Unknown function in CEL expression | WARNING |
 | [GA312](#ga312--invalid-versioned_expr-value) | Invalid versioned_expr value | ERROR |
@@ -482,7 +483,7 @@ google:
 
 **Severity:** ERROR
 
-Cloud Armor priorities must be between 0 and 2,147,483,646 (inclusive). Priority 2,147,483,647 is reserved for the default rule.
+Cloud Armor's own range is 0 to 2,147,483,647, but 2,147,483,647 *is* the default rule. octorules manages that rule through `policy_settings.default_rule_action`, so a custom rule at that priority would put two config surfaces on one rule.
 
 **Triggers on:**
 
@@ -686,7 +687,7 @@ google:
 
 **Severity:** ERROR
 
-The `deny()` action only supports status codes 403, 404, 429, and 502. Other HTTP status codes are rejected by the Cloud Armor API.
+A rule's `deny()` action supports status codes 403, 404 and 502: "deny(STATUS) ... Valid values for `STATUS` are 403, 404, and 502" (compute v1 discovery, `SecurityPolicyRule.action`). 429 is accepted only by a rate-limit `exceed_action` — see [GA406](#ga406--invalid-exceed_action). Other status codes are rejected by the Cloud Armor API.
 
 **Triggers on:**
 
@@ -907,6 +908,44 @@ google:
           - "10.0.0.0/24"
 ```
 
+
+---
+
+### GA308 -- src_ip_ranges exceeds the 10-range maximum
+
+**Severity:** ERROR
+
+Cloud Armor caps a single rule's `src_ip_ranges` at ten entries: "CIDR IP address range. Maximum number of src_ip_ranges allowed is 10." (compute v1 discovery, `SecurityPolicyRuleMatcherConfig.srcIpRanges`). An eleventh entry is rejected by the API, so this is caught before the call.
+
+**Triggers on:**
+
+```yaml
+google:
+  custom_rules:
+  - ref: '1000'
+    action: deny(403)
+    match:
+      config:
+        src_ip_ranges:
+        - 192.0.2.0/32
+        - 192.0.2.1/32
+        - 192.0.2.2/32
+        - 192.0.2.3/32
+        - 192.0.2.4/32
+        - 192.0.2.5/32
+        - 192.0.2.6/32
+        - 192.0.2.7/32
+        - 192.0.2.8/32
+        - 192.0.2.9/32
+        - 192.0.2.10/32
+```
+
+**Fix:** split the ranges across several rules, or match with a CEL expression:
+
+```yaml
+      expr:
+        expression: "inIpRange(origin.ip, '192.0.2.0/24')"
+```
 ---
 
 ### GA310 -- Unknown field reference in CEL expression
@@ -1552,7 +1591,9 @@ The `conform_action` field in `rate_limit_options` must be `"allow"`. Cloud Armo
 
 **Severity:** ERROR
 
-The `exceed_action` value is not recognized. Valid values are: `deny-403`, `deny-404`, `deny-429`, `deny-502`, and `redirect`.
+The `exceed_action` value is not recognized. Two spellings are accepted for the same value, because gcloud writes `deny-403` while the REST API documents `deny(403)`: either form is valid for statuses 403, 404, 429 and 502, plus `redirect`. The gcloud form is rewritten to the REST form before the API call, so it does not show up as a permanent difference in `plan`.
+
+Note that 429 is valid **here** but not as a rule `action` — see [GA201](#ga201--invalid-deny-status-code).
 
 **Triggers on:**
 

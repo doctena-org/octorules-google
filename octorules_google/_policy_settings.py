@@ -14,6 +14,8 @@ import logging
 from octorules.extensions import ProviderExtension, SettingsChange, SettingsFormatter, SettingsPlan
 from octorules.registration import idempotent_registration
 
+from octorules_google.validate import _DENY_STATUSES
+
 log = logging.getLogger(__name__)
 
 _EXT_KEY = "google.policy_settings"
@@ -40,7 +42,10 @@ class PolicySettingsPlan(SettingsPlan):
 # ---------------------------------------------------------------------------
 # Valid enum values
 # ---------------------------------------------------------------------------
-_VALID_DEFAULT_ACTIONS = frozenset({"allow", "deny(403)", "deny(404)", "deny(429)", "deny(502)"})
+# The default rule is a rule, so its action takes the rule-action statuses,
+# not the wider set a rate-limit exceedAction accepts.  Derived from
+# validate._DENY_STATUSES so the two cannot drift.
+_VALID_DEFAULT_ACTIONS = frozenset({"allow"} | {f"deny({s})" for s in _DENY_STATUSES})
 _VALID_DDOS_PROTECTION = frozenset({"STANDARD", "ADVANCED", "ADVANCED_PREVIEW"})
 _VALID_JSON_PARSING = frozenset({"DISABLED", "STANDARD", "STANDARD_WITH_GRAPHQL"})
 _VALID_LOG_LEVELS = frozenset({"NORMAL", "VERBOSE"})

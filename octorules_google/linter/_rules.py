@@ -19,7 +19,12 @@ GA027 = RuleMeta(
 GA100 = RuleMeta(
     "GA100", "priority", "Invalid priority (must be non-negative integer)", Severity.ERROR
 )
-GA101 = RuleMeta("GA101", "priority", "Priority out of range (0-2147483646)", Severity.ERROR)
+GA101 = RuleMeta(
+    "GA101",
+    "priority",
+    "Priority out of range, or the default rule's reserved priority",
+    Severity.ERROR,
+)
 GA102 = RuleMeta("GA102", "priority", "Duplicate priority", Severity.ERROR)
 GA103 = RuleMeta("GA103", "cross_rule", "Unreachable rule after match-all", Severity.WARNING)
 GA104 = RuleMeta("GA104", "cross_rule", "Duplicate CEL expression across rules", Severity.WARNING)
@@ -42,6 +47,7 @@ GA304 = RuleMeta("GA304", "match", "CEL expression exceeds 2048 character limit"
 GA305 = RuleMeta("GA305", "match", "Overlapping or duplicate CIDRs", Severity.WARNING)
 GA306 = RuleMeta("GA306", "match", "/0 CIDR matches all traffic", Severity.WARNING)
 GA307 = RuleMeta("GA307", "match", "CIDR has host bits set (will be normalized)", Severity.WARNING)
+GA308 = RuleMeta("GA308", "match", "src_ip_ranges exceeds the 10-range maximum", Severity.ERROR)
 
 # Category GA4xx — Rate-limit and redirect option checks
 GA400 = RuleMeta(

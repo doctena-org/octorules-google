@@ -505,7 +505,7 @@ class TestValidateExtension:
 
     def test_valid_all_default_actions(self):
         """All valid default actions pass validation."""
-        for action in ("allow", "deny(403)", "deny(404)", "deny(429)", "deny(502)"):
+        for action in ("allow", "deny(403)", "deny(404)", "deny(502)"):
             desired = {"google.policy_settings": {"default_rule_action": action}}
             errors: list[str] = []
             _validate_policy_settings(desired, "zone", errors, [])
@@ -1111,14 +1111,18 @@ class TestRecaptchaOptionsConfig:
 
 
 # ---------------------------------------------------------------------------
-# Validate extension — deny(429) default action
+# Validate extension — deny(429) is not a rule action
 # ---------------------------------------------------------------------------
 class TestValidateDeny429:
-    def test_deny_429_is_valid(self):
+    def test_deny_429_is_rejected_as_a_default_action(self):
+        """The default rule is a rule, so its action takes the rule-action
+        statuses: "deny(STATUS) ... Valid values for `STATUS` are 403, 404, and
+        502." 429 is accepted only by a rate-limit exceedAction."""
         desired = {"google.policy_settings": {"default_rule_action": "deny(429)"}}
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
-        assert errors == []
+        assert len(errors) == 1
+        assert "default_rule_action" in errors[0]
 
 
 # ---------------------------------------------------------------------------

@@ -61,6 +61,7 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA305",
         "GA306",
         "GA307",
+        "GA308",
         "GA310",
         "GA311",
         "GA312",
@@ -152,10 +153,26 @@ _VALID_RULE_FIELDS = frozenset(
 )
 
 _BASE_ACTIONS = frozenset({"allow", "throttle", "rate_based_ban", "redirect"})
-_DENY_STATUSES = frozenset({403, 404, 429, 502})
+# A rule action and a rate-limit exceedAction do NOT accept the same set.
+# compute v1 discovery, SecurityPolicyRule.action: "deny(STATUS) ... Valid
+# values for `STATUS` are 403, 404, and 502."  RateLimitOptions.exceedAction:
+# "valid values for `STATUS` are 403, 404, 429, and 502."  429 is
+# exceedAction-only.
+_DENY_STATUSES = frozenset({403, 404, 502})
+_EXCEED_DENY_STATUSES = frozenset({403, 404, 429, 502})
 _DENY_RE = re.compile(r"^deny\((\d+)\)$")
 _VALID_REDIRECT_TYPES = frozenset({"GOOGLE_RECAPTCHA", "EXTERNAL_302"})
+# Cloud Armor's own range is 0..2147483647 (compute v1 discovery,
+# SecurityPolicyRule.priority), but 2147483647 IS the default rule, and this
+# provider manages that rule through policy_settings.default_rule_action --
+# normalize_policy_settings reads it from the rule at that priority.  A custom
+# rule there would put two config surfaces on one rule, so custom_rules stops
+# one short of Google's maximum by design.
 _MAX_PRIORITY = 2_147_483_646
+
+# compute v1 discovery, SecurityPolicyRuleMatcherConfig.srcIpRanges:
+# "CIDR IP address range. Maximum number of src_ip_ranges allowed is 10."
+_MAX_SRC_IP_RANGES = 10
 _MAX_DESCRIPTION = 1024
 _MAX_EXPRESSION = 2048
 _MAX_REGEX_PATTERN_LEN = 512
@@ -397,14 +414,15 @@ _TIER_RULE_LIMITS: dict[str, int] = {
     "enterprise": 1024,
 }
 
+# Two spellings reach us for the same value: gcloud writes `deny-403`, while the
+# REST API this provider actually calls documents `deny(403)` (compute v1
+# discovery, RateLimitOptions.exceedAction).  Rejecting either would be a false
+# error, so both are accepted here and normalized to the REST form on the way
+# out -- see _normalize_exceed_action.
 _VALID_EXCEED_ACTIONS = frozenset(
-    {
-        "deny-403",
-        "deny-404",
-        "deny-429",
-        "deny-502",
-        "redirect",
-    }
+    {f"deny-{s}" for s in sorted(_EXCEED_DENY_STATUSES)}
+    | {f"deny({s})" for s in sorted(_EXCEED_DENY_STATUSES)}
+    | {"redirect"}
 )
 _VALID_INTERVALS = frozenset(
     {
@@ -553,7 +571,11 @@ def _check_priority(
             _result(
                 rule_id="GA101",
                 severity=Severity.ERROR,
-                message=f"Priority {pri} out of range (0\u2013{_MAX_PRIORITY})",
+                message=(
+                    f"Priority {pri} out of range (0-{_MAX_PRIORITY});"
+                    " 2147483647 is the default rule, set through"
+                    " policy_settings.default_rule_action"
+                ),
                 phase=phase,
                 ref=ref,
                 field="ref",
@@ -591,7 +613,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
                     phase=phase,
                     ref=ref,
                     field="action",
-                    suggestion="Valid deny statuses: 403, 404, 429, 502",
+                    suggestion="Valid deny statuses: 403, 404, 502",
                 )
             )
     elif action not in _BASE_ACTIONS:
@@ -599,7 +621,7 @@ def _check_action(rule: dict, results: list[LintResult], phase: str, ref: str) -
             suggestion = "deny requires a status code, e.g. deny(403)"
         else:
             suggestion = (
-                "Valid actions: allow, deny(403), deny(404), deny(429),"
+                "Valid actions: allow, deny(403), deny(404),"
                 " deny(502), rate_based_ban, redirect, throttle"
             )
         results.append(
@@ -876,6 +898,21 @@ def _check_match(
         ranges = config.get("src_ip_ranges", [])
         if isinstance(ranges, list):
             _check_cidrs(ranges, results, phase, ref)
+            if len(ranges) > _MAX_SRC_IP_RANGES:
+                results.append(
+                    _result(
+                        rule_id="GA308",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"src_ip_ranges has {len(ranges)} entries, exceeding the"
+                            f" maximum of {_MAX_SRC_IP_RANGES}"
+                        ),
+                        phase=phase,
+                        ref=ref,
+                        field="match.config.src_ip_ranges",
+                        suggestion="Split the ranges across several rules, or use a CEL expression",
+                    )
+                )
 
     # GA302 / GA303 / GA304: CEL expression checks
     if has_expr:

@@ -158,7 +158,9 @@ class TestPriority:
     def test_ga100_zero_accepted(self):
         assert_no_lint(validate_rules([_rule(ref="0")]), "GA100")
 
-    def test_ga101_out_of_range(self):
+    def test_ga101_rejects_the_default_rules_priority(self):
+        """Google's range ends at 2147483647, but that priority IS the default
+        rule, which policy_settings.default_rule_action manages."""
         assert_lint(validate_rules([_rule(ref="2147483647")]), "GA101")
 
     def test_ga101_max_valid(self):
@@ -345,9 +347,13 @@ class TestActions:
     def test_ga201_deny_200(self):
         assert_lint(validate_rules([_rule(action="deny(200)")]), "GA201")
 
-    def test_ga201_deny_429_valid(self):
-        """deny(429) is a valid deny status and should not trigger GA201."""
-        assert_no_lint(validate_rules([_rule(action="deny(429)")]), "GA201")
+    def test_ga201_deny_429_is_exceed_action_only(self):
+        (
+            """429 is valid for a rate-limit exceedAction, not for a rule action:
+        "deny(STATUS) ... Valid values for `STATUS` are 403, 404, and 502."""
+            ""
+        )
+        assert_lint(validate_rules([_rule(action="deny(429)")]), "GA201")
 
 
 # ---------------------------------------------------------------------------
@@ -4029,3 +4035,61 @@ class TestRuleOverlap:
             f"GA110 should NOT fire for AND contradiction; got {rule_ids2}"
         )
         assert "GA112" in rule_ids2, f"GA112 not found; got {rule_ids2}"
+
+
+class TestGoogleClaimsMatchTheApiDefinition:
+    """Each of these encodes a verbatim statement from the compute v1 discovery
+    document, so a future edit that drifts from Google's contract fails here."""
+
+    def test_deny_429_is_not_a_valid_rule_action(self):
+        """action: "Valid values for `STATUS` are 403, 404, and 502." 429 is
+        accepted only by a rate-limit exceedAction."""
+        assert_lint(validate_rules([_rule(action="deny(429)")]), "GA201")
+
+    def test_the_three_documented_action_statuses_pass(self):
+        for status in (403, 404, 502):
+            assert_no_lint(validate_rules([_rule(action=f"deny({status})")]), "GA201")
+
+    def test_src_ip_ranges_above_ten_errors(self):
+        """srcIpRanges: "Maximum number of src_ip_ranges allowed is 10." """
+        ranges = [f"192.0.2.{i}/32" for i in range(11)]
+        assert_lint(validate_rules([_rule(match={"config": {"src_ip_ranges": ranges}})]), "GA308")
+
+    def test_exactly_ten_src_ip_ranges_is_fine(self):
+        ranges = [f"192.0.2.{i}/32" for i in range(10)]
+        assert_no_lint(
+            validate_rules([_rule(match={"config": {"src_ip_ranges": ranges}})]), "GA308"
+        )
+
+
+class TestExceedActionSpellings:
+    """gcloud writes deny-403; the REST API documents deny(403). Neither may be
+    reported as invalid, and the REST form is what goes on the wire."""
+
+    def test_both_spellings_lint_clean(self):
+        for spelling in ("deny-429", "deny(429)", "deny-403", "deny(403)", "redirect"):
+            rule = _rule(
+                action="throttle",
+                rate_limit_options={
+                    "conform_action": "allow",
+                    "exceed_action": spelling,
+                    "rate_limit_threshold": {"count": 100, "interval_sec": 60},
+                    "enforce_on_key": "IP",
+                },
+            )
+            assert_no_lint(validate_rules([rule]), "GA406")
+
+    def test_an_undocumented_status_still_errors(self):
+        rule = _rule(
+            action="throttle",
+            rate_limit_options={"conform_action": "allow", "exceed_action": "deny(418)"},
+        )
+        assert_lint(validate_rules([rule]), "GA406")
+
+    def test_the_gcloud_spelling_is_normalized_before_the_wire(self):
+        """Left as deny-429, desired would never equal what the API reads back,
+        so every plan would show a change that applying could not settle."""
+        from octorules_google.provider import _denormalize_rule
+
+        out = _denormalize_rule({"ref": "100", "rate_limit_options": {"exceed_action": "deny-429"}})
+        assert out["rate_limit_options"]["exceed_action"] == "deny(429)"

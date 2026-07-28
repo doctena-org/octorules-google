@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 from typing import TYPE_CHECKING
 
@@ -200,9 +201,32 @@ def _normalize_rule(rule) -> dict:
     return d
 
 
+_GCLOUD_EXCEED_ACTION_RE = re.compile(r"^deny-(\d{3})$")
+
+
+def _normalize_exceed_action(rule: dict) -> dict:
+    """Rewrite a gcloud-style ``deny-403`` exceed action to the REST form.
+
+    gcloud spells this ``deny-403``; the REST API this provider calls documents
+    ``deny(403)`` and returns that form when read back.  Sending the gcloud
+    spelling would leave desired and actual permanently unequal, so every plan
+    would report a change that applying could never settle.
+    """
+    rlo = rule.get("rate_limit_options")
+    if not isinstance(rlo, dict):
+        return rule
+    m = _GCLOUD_EXCEED_ACTION_RE.match(str(rlo.get("exceed_action", "")))
+    if not m:
+        return rule
+    out = dict(rule)
+    out["rate_limit_options"] = {**rlo, "exceed_action": f"deny({m.group(1)})"}
+    return out
+
+
 def _denormalize_rule(rule: dict) -> dict:
     """Convert an octorules dict back to Cloud Armor format (ref -> priority)."""
-    d = dict(rule)
+    d = _normalize_exceed_action(rule)
+    d = dict(d)
     # octorules refs are strings; Cloud Armor priorities are ints.
     ref_str = d.get("ref", "0")
     try:
