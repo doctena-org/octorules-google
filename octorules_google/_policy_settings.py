@@ -301,7 +301,6 @@ class PolicySettingsExtension(ProviderExtension):
     """Cloud Armor policy-level settings."""
 
     section = "google.policy_settings"
-    formatter = PolicySettingsFormatter()
 
     def prefetch(self, desired, scope, provider):
         return _prefetch_policy_settings(desired, scope, provider)
@@ -314,9 +313,6 @@ class PolicySettingsExtension(ProviderExtension):
 
     def dump(self, scope, provider):
         return _dump_policy_settings(scope, provider)
-
-    def validate(self, desired, zone_name, errors, lines):
-        return _validate_policy_settings(desired, zone_name, errors, lines)
 
 
 # ---------------------------------------------------------------------------
