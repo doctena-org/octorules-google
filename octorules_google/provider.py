@@ -20,7 +20,11 @@ from octorules.config import ConfigError
 if TYPE_CHECKING:
     from google.cloud import compute_v1
 from octorules.phases import Phase
-from octorules.provider.base import PhaseRulesResult, Scope
+from octorules.provider.base import (
+    SUPPORTS_ZONE_DISCOVERY,
+    PhaseRulesResult,
+    Scope,
+)
 from octorules.provider.utils import (
     denormalize_fields,
     make_error_wrapper,
@@ -229,7 +233,7 @@ class CloudArmorProvider:
     """
 
     NAMESPACE: str = "google"
-    SUPPORTS: frozenset[str] = frozenset({"zone_discovery"})
+    SUPPORTS: frozenset[str] = frozenset({SUPPORTS_ZONE_DISCOVERY})
 
     # Built lazily by the `extensions` property.
     _extensions: list | None = None
