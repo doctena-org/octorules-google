@@ -20,11 +20,11 @@ class TestGoogleNamespace:
     def test_namespace_contains_all_keys(self):
         """Verify the google namespace maps all Cloud Armor sections."""
         expected = {
-            "custom_rules": "gcloud_armor_custom_rules",
-            "rate_rules": "gcloud_armor_rate_rules",
-            "preconfigured_rules": "gcloud_armor_preconfigured_rules",
-            "redirect_rules": "gcloud_armor_redirect_rules",
-            "policy_settings": "gcloud_armor_policy_settings",
+            "custom_rules": "google.custom_rules",
+            "rate_rules": "google.rate_rules",
+            "preconfigured_rules": "google.preconfigured_rules",
+            "redirect_rules": "google.redirect_rules",
+            "policy_settings": "google.policy_settings",
         }
         assert PROVIDER_NAMESPACES["google"] == expected
 
@@ -44,29 +44,13 @@ class TestGoogleNamespace:
 
         # Verify flattened structure
         assert result == {
-            "gcloud_armor_custom_rules": [{"ref": "100", "action": "allow"}],
-            "gcloud_armor_rate_rules": [{"ref": "1000", "action": "throttle"}],
-            "gcloud_armor_preconfigured_rules": [{"ref": "2000", "action": "deny(403)"}],
-            "gcloud_armor_redirect_rules": [{"ref": "3000", "action": "redirect"}],
-            "gcloud_armor_policy_settings": {
-                "ddosProtectionConfig": {"ddosProtection": "ADVANCED"}
-            },
+            "google.custom_rules": [{"ref": "100", "action": "allow"}],
+            "google.rate_rules": [{"ref": "1000", "action": "throttle"}],
+            "google.preconfigured_rules": [{"ref": "2000", "action": "deny(403)"}],
+            "google.redirect_rules": [{"ref": "3000", "action": "redirect"}],
+            "google.policy_settings": {"ddosProtectionConfig": {"ddosProtection": "ADVANCED"}},
             "plan_outputs": [{"type": "text"}],
         }
-
-    def test_flat_format_warns_but_works(self, caplog):
-        """Verify flat spelling still works but emits a deprecation warning."""
-        flat_data = {
-            "gcloud_armor_custom_rules": [{"ref": "100", "action": "allow"}],
-        }
-        with caplog.at_level("WARNING", logger="octorules.config"):
-            result = normalize_zone_format(flat_data, source="zone.yaml")
-
-        # Flat format passes through unchanged
-        assert result is flat_data
-        # But a deprecation warning was issued
-        assert "deprecated flat spelling" in caplog.text
-        assert "google:" in caplog.text
 
     def test_namespace_with_lists_and_rulesets(self):
         """Verify lists and custom_rulesets work inside google: block."""
@@ -79,7 +63,7 @@ class TestGoogleNamespace:
         }
         result = normalize_zone_format(nested_data, source="zone.yaml")
 
-        assert "gcloud_armor_custom_rules" in result
+        assert "google.custom_rules" in result
         assert "lists" in result
         assert "custom_rulesets" in result
         assert result["lists"] == [{"name": "ip_list"}]

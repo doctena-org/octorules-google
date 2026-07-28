@@ -782,17 +782,17 @@ class TestPhaseRegistration:
     def test_phases_registered(self):
         from octorules.phases import PHASE_BY_NAME, get_phase
 
-        assert "gcloud_armor_custom_rules" in PHASE_BY_NAME
-        assert "gcloud_armor_rate_rules" in PHASE_BY_NAME
-        assert "gcloud_armor_preconfigured_rules" in PHASE_BY_NAME
-        assert "gcloud_armor_redirect_rules" in PHASE_BY_NAME
+        assert "google.custom_rules" in PHASE_BY_NAME
+        assert "google.rate_rules" in PHASE_BY_NAME
+        assert "google.preconfigured_rules" in PHASE_BY_NAME
+        assert "google.redirect_rules" in PHASE_BY_NAME
 
-        phase = get_phase("gcloud_armor_custom_rules")
+        phase = get_phase("google.custom_rules")
         assert phase.provider_id == "gcloud_armor_custom"
         assert phase.zone_level is True
         assert phase.account_level is False
 
-        redirect_phase = get_phase("gcloud_armor_redirect_rules")
+        redirect_phase = get_phase("google.redirect_rules")
         assert redirect_phase.provider_id == "gcloud_armor_redirect"
 
 

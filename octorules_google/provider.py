@@ -37,28 +37,28 @@ log = logging.getLogger(__name__)
 
 _GCLOUD_PHASES = [
     Phase(
-        "gcloud_armor_custom_rules",
+        "google.custom_rules",
         "gcloud_armor_custom",
         None,
         zone_level=True,
         account_level=False,
     ),
     Phase(
-        "gcloud_armor_rate_rules",
+        "google.rate_rules",
         "gcloud_armor_rate",
         None,
         zone_level=True,
         account_level=False,
     ),
     Phase(
-        "gcloud_armor_preconfigured_rules",
+        "google.preconfigured_rules",
         "gcloud_armor_preconfigured",
         None,
         zone_level=True,
         account_level=False,
     ),
     Phase(
-        "gcloud_armor_redirect_rules",
+        "google.redirect_rules",
         "gcloud_armor_redirect",
         None,
         zone_level=True,

@@ -332,7 +332,7 @@ class TestPrefetchHook:
             "default_rule_action": "allow",
             "ddos_protection_config": {"ddos_protection": "STANDARD"},
         }
-        all_desired = {"gcloud_armor_policy_settings": {"default_rule_action": "deny(403)"}}
+        all_desired = {"google.policy_settings": {"default_rule_action": "deny(403)"}}
         result = _prefetch_policy_settings(all_desired, _scope(), provider)
         assert result is not None
         current, desired = result
@@ -344,7 +344,7 @@ class TestPrefetchHook:
 
         provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.side_effect = ProviderError("API down")
-        all_desired = {"gcloud_armor_policy_settings": {"default_rule_action": "deny(403)"}}
+        all_desired = {"google.policy_settings": {"default_rule_action": "deny(403)"}}
         result = _prefetch_policy_settings(all_desired, _scope(), provider)
         current, _desired = result
         assert current == {}
@@ -354,7 +354,7 @@ class TestPrefetchHook:
 
         provider = MagicMock(spec=CloudArmorProvider)
         provider.get_policy_settings.side_effect = ProviderAuthError("forbidden")
-        all_desired = {"gcloud_armor_policy_settings": {"default_rule_action": "deny(403)"}}
+        all_desired = {"google.policy_settings": {"default_rule_action": "deny(403)"}}
         with pytest.raises(ProviderAuthError):
             _prefetch_policy_settings(all_desired, _scope(), provider)
 
@@ -372,8 +372,8 @@ class TestFinalizeHook:
         ctx = (current, desired)
 
         _finalize_policy_settings(zp, {}, _scope(), MagicMock(), ctx)
-        assert "gcloud_armor_policy_settings" in zp.extension_plans
-        plan = zp.extension_plans["gcloud_armor_policy_settings"][0]
+        assert "google.policy_settings" in zp.extension_plans
+        plan = zp.extension_plans["google.policy_settings"][0]
         assert plan.has_changes
 
     def test_no_plan_when_no_changes(self):
@@ -385,7 +385,7 @@ class TestFinalizeHook:
         ctx = (current, desired)
 
         _finalize_policy_settings(zp, {}, _scope(), MagicMock(), ctx)
-        assert "gcloud_armor_policy_settings" not in zp.extension_plans
+        assert "google.policy_settings" not in zp.extension_plans
 
     def test_none_ctx_is_noop(self):
         zp = MagicMock()
@@ -413,7 +413,7 @@ class TestApplyHook:
         )
         synced, error = _apply_policy_settings(zp, [plan], _scope(), provider)
         assert error is None
-        assert "gcloud_armor_policy_settings" in synced
+        assert "google.policy_settings" in synced
         provider.update_policy_settings.assert_called_once()
         call_args = provider.update_policy_settings.call_args
         payload = call_args[0][1]
@@ -443,7 +443,7 @@ class TestApplyHook:
 class TestValidateExtension:
     def test_valid_settings(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "default_rule_action": "deny(403)",
                 "ddos_protection_config": {"ddos_protection": "ADVANCED"},
                 "advanced_options_config": {"json_parsing": "STANDARD"},
@@ -454,7 +454,7 @@ class TestValidateExtension:
         assert errors == []
 
     def test_invalid_default_action(self):
-        desired = {"gcloud_armor_policy_settings": {"default_rule_action": "block"}}
+        desired = {"google.policy_settings": {"default_rule_action": "block"}}
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
         assert len(errors) == 1
@@ -463,9 +463,7 @@ class TestValidateExtension:
 
     def test_invalid_ddos_protection(self):
         desired = {
-            "gcloud_armor_policy_settings": {
-                "ddos_protection_config": {"ddos_protection": "ULTIMATE"}
-            }
+            "google.policy_settings": {"ddos_protection_config": {"ddos_protection": "ULTIMATE"}}
         }
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
@@ -475,9 +473,7 @@ class TestValidateExtension:
 
     def test_invalid_json_parsing(self):
         desired = {
-            "gcloud_armor_policy_settings": {
-                "advanced_options_config": {"json_parsing": "AGGRESSIVE"}
-            }
+            "google.policy_settings": {"advanced_options_config": {"json_parsing": "AGGRESSIVE"}}
         }
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
@@ -492,14 +488,12 @@ class TestValidateExtension:
 
     def test_non_dict_config_is_ok(self):
         errors: list[str] = []
-        _validate_policy_settings(
-            {"gcloud_armor_policy_settings": "not-a-dict"}, "zone", errors, []
-        )
+        _validate_policy_settings({"google.policy_settings": "not-a-dict"}, "zone", errors, [])
         assert errors == []
 
     def test_multiple_errors(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "default_rule_action": "block",
                 "ddos_protection_config": {"ddos_protection": "ULTIMATE"},
                 "advanced_options_config": {"json_parsing": "AGGRESSIVE"},
@@ -512,7 +506,7 @@ class TestValidateExtension:
     def test_valid_all_default_actions(self):
         """All valid default actions pass validation."""
         for action in ("allow", "deny(403)", "deny(404)", "deny(429)", "deny(502)"):
-            desired = {"gcloud_armor_policy_settings": {"default_rule_action": action}}
+            desired = {"google.policy_settings": {"default_rule_action": action}}
             errors: list[str] = []
             _validate_policy_settings(desired, "zone", errors, [])
             assert errors == [], f"Action {action!r} should be valid"
@@ -520,7 +514,7 @@ class TestValidateExtension:
     def test_valid_ddos_values(self):
         for val in ("STANDARD", "ADVANCED", "ADVANCED_PREVIEW"):
             desired = {
-                "gcloud_armor_policy_settings": {"ddos_protection_config": {"ddos_protection": val}}
+                "google.policy_settings": {"ddos_protection_config": {"ddos_protection": val}}
             }
             errors: list[str] = []
             _validate_policy_settings(desired, "zone", errors, [])
@@ -528,9 +522,7 @@ class TestValidateExtension:
 
     def test_valid_json_parsing_values(self):
         for val in ("DISABLED", "STANDARD", "STANDARD_WITH_GRAPHQL"):
-            desired = {
-                "gcloud_armor_policy_settings": {"advanced_options_config": {"json_parsing": val}}
-            }
+            desired = {"google.policy_settings": {"advanced_options_config": {"json_parsing": val}}}
             errors: list[str] = []
             _validate_policy_settings(desired, "zone", errors, [])
             assert errors == [], f"JSON parsing {val!r} should be valid"
@@ -538,7 +530,7 @@ class TestValidateExtension:
     def test_nested_non_dict_config_skipped(self):
         """Non-dict nested configs don't crash validation."""
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "ddos_protection_config": "not-a-dict",
                 "advanced_options_config": 42,
             }
@@ -550,7 +542,7 @@ class TestValidateExtension:
     def test_none_nested_values_skipped(self):
         """None values inside nested dicts don't trigger validation errors."""
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "ddos_protection_config": {"ddos_protection": None},
                 "advanced_options_config": {"json_parsing": None},
             }
@@ -561,20 +553,20 @@ class TestValidateExtension:
 
     def test_recaptcha_options_config_non_dict(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "recaptcha_options_config": "not_a_dict",
             }
         }
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
         assert len(errors) == 1
-        assert "zone/gcloud_armor_policy_settings:" in errors[0]
+        assert "zone/google.policy_settings:" in errors[0]
         assert "recaptcha_options_config" in errors[0]
         assert "mapping" in errors[0]
 
     def test_recaptcha_options_config_valid_dict(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "recaptcha_options_config": {"redirect_site_key": "key123"},
             }
         }
@@ -594,8 +586,8 @@ class TestDumpExtension:
             "ddos_protection_config": {"ddos_protection": "STANDARD"},
         }
         result = _dump_policy_settings(_scope(), provider)
-        assert "gcloud_armor_policy_settings" in result
-        assert result["gcloud_armor_policy_settings"]["default_rule_action"] == "allow"
+        assert "google.policy_settings" in result
+        assert result["google.policy_settings"]["default_rule_action"] == "allow"
 
     def test_dump_api_failure(self):
         from octorules.provider.exceptions import ProviderError
@@ -949,17 +941,13 @@ class TestProviderUpdatePolicySettings:
 class TestValidateLogLevel:
     def test_valid_log_levels(self):
         for val in ("NORMAL", "VERBOSE"):
-            desired = {
-                "gcloud_armor_policy_settings": {"advanced_options_config": {"log_level": val}}
-            }
+            desired = {"google.policy_settings": {"advanced_options_config": {"log_level": val}}}
             errors: list[str] = []
             _validate_policy_settings(desired, "zone", errors, [])
             assert errors == [], f"log_level {val!r} should be valid"
 
     def test_invalid_log_level(self):
-        desired = {
-            "gcloud_armor_policy_settings": {"advanced_options_config": {"log_level": "DEBUG"}}
-        }
+        desired = {"google.policy_settings": {"advanced_options_config": {"log_level": "DEBUG"}}}
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
         assert len(errors) == 1
@@ -967,7 +955,7 @@ class TestValidateLogLevel:
         assert "DEBUG" in errors[0]
 
     def test_none_log_level_ok(self):
-        desired = {"gcloud_armor_policy_settings": {"advanced_options_config": {"log_level": None}}}
+        desired = {"google.policy_settings": {"advanced_options_config": {"log_level": None}}}
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
         assert errors == []
@@ -979,7 +967,7 @@ class TestValidateLogLevel:
 class TestValidateAdaptiveProtection:
     def test_valid_config(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "adaptive_protection_config": {
                     "layer7_ddos_defense_config": {
                         "enable": True,
@@ -994,7 +982,7 @@ class TestValidateAdaptiveProtection:
 
     def test_enable_not_bool(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "adaptive_protection_config": {"layer7_ddos_defense_config": {"enable": "yes"}}
             }
         }
@@ -1007,7 +995,7 @@ class TestValidateAdaptiveProtection:
     def test_enable_int_not_bool(self):
         """Integer 1 should be rejected — must be actual bool."""
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "adaptive_protection_config": {"layer7_ddos_defense_config": {"enable": 1}}
             }
         }
@@ -1017,7 +1005,7 @@ class TestValidateAdaptiveProtection:
 
     def test_invalid_rule_visibility(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "adaptive_protection_config": {
                     "layer7_ddos_defense_config": {"rule_visibility": "BASIC"}
                 }
@@ -1032,7 +1020,7 @@ class TestValidateAdaptiveProtection:
     def test_valid_rule_visibility_values(self):
         for val in ("PREMIUM", "STANDARD"):
             desired = {
-                "gcloud_armor_policy_settings": {
+                "google.policy_settings": {
                     "adaptive_protection_config": {
                         "layer7_ddos_defense_config": {"rule_visibility": val}
                     }
@@ -1044,7 +1032,7 @@ class TestValidateAdaptiveProtection:
 
     def test_none_values_ok(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "adaptive_protection_config": {
                     "layer7_ddos_defense_config": {
                         "enable": None,
@@ -1059,7 +1047,7 @@ class TestValidateAdaptiveProtection:
 
     def test_non_dict_layer7_config_skipped(self):
         desired = {
-            "gcloud_armor_policy_settings": {
+            "google.policy_settings": {
                 "adaptive_protection_config": {"layer7_ddos_defense_config": "not-a-dict"}
             }
         }
@@ -1068,7 +1056,7 @@ class TestValidateAdaptiveProtection:
         assert errors == []
 
     def test_non_dict_adaptive_config_skipped(self):
-        desired = {"gcloud_armor_policy_settings": {"adaptive_protection_config": "not-a-dict"}}
+        desired = {"google.policy_settings": {"adaptive_protection_config": "not-a-dict"}}
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
         assert errors == []
@@ -1127,7 +1115,7 @@ class TestRecaptchaOptionsConfig:
 # ---------------------------------------------------------------------------
 class TestValidateDeny429:
     def test_deny_429_is_valid(self):
-        desired = {"gcloud_armor_policy_settings": {"default_rule_action": "deny(429)"}}
+        desired = {"google.policy_settings": {"default_rule_action": "deny(429)"}}
         errors: list[str] = []
         _validate_policy_settings(desired, "zone", errors, [])
         assert errors == []

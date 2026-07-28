@@ -43,7 +43,7 @@ class TestGoogleLint:
     def test_adds_results_for_invalid_rules(self):
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {"action": "allow"},  # missing ref and match
             ],
         }
@@ -63,35 +63,35 @@ class TestGoogleLint:
         assert ctx.results == []
 
     def test_phase_filtering(self):
-        ctx = LintContext(phase_filter=["gcloud_armor_rate_rules"])
+        ctx = LintContext(phase_filter=["google.rate_rules"])
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {"action": "allow"},  # missing ref, match — but phase filtered out
             ],
-            "gcloud_armor_rate_rules": [
+            "google.rate_rules": [
                 {"ref": "100", "action": "throttle", "match": {"expr": {"expression": "true"}}},
             ],
         }
         google_lint(rules_data, ctx)
         # Should only have results from rate_rules, not custom_rules
         for r in ctx.results:
-            assert r.phase == "gcloud_armor_rate_rules"
+            assert r.phase == "google.rate_rules"
 
     def test_ga006_non_list_phase_value(self):
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": "not-a-list",
+            "google.custom_rules": "not-a-list",
         }
         google_lint(rules_data, ctx)
         ga006 = [r for r in ctx.results if r.rule_id == "GA006"]
         assert len(ga006) == 1
-        assert ga006[0].phase == "gcloud_armor_custom_rules"
+        assert ga006[0].phase == "google.custom_rules"
         assert "str" in ga006[0].message
 
     def test_ga006_dict_phase_value(self):
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": {"not": "a list"},
+            "google.custom_rules": {"not": "a list"},
         }
         google_lint(rules_data, ctx)
         ga006 = [r for r in ctx.results if r.rule_id == "GA006"]
@@ -101,7 +101,7 @@ class TestGoogleLint:
     def test_ga006_not_triggered_for_valid_list(self):
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "100",
                     "action": "allow",
@@ -115,7 +115,7 @@ class TestGoogleLint:
     def test_valid_rules_no_results(self):
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "100",
                     "action": "allow",
@@ -130,17 +130,17 @@ class TestGoogleLint:
         ctx = LintContext()
         bad_rule = {"action": "allow"}  # missing ref and match
         rules_data = {
-            "gcloud_armor_custom_rules": [bad_rule],
-            "gcloud_armor_rate_rules": [bad_rule],
-            "gcloud_armor_preconfigured_rules": [bad_rule],
-            "gcloud_armor_redirect_rules": [bad_rule],
+            "google.custom_rules": [bad_rule],
+            "google.rate_rules": [bad_rule],
+            "google.preconfigured_rules": [bad_rule],
+            "google.redirect_rules": [bad_rule],
         }
         google_lint(rules_data, ctx)
         phases_in_results = {r.phase for r in ctx.results}
-        assert "gcloud_armor_custom_rules" in phases_in_results
-        assert "gcloud_armor_rate_rules" in phases_in_results
-        assert "gcloud_armor_preconfigured_rules" in phases_in_results
-        assert "gcloud_armor_redirect_rules" in phases_in_results
+        assert "google.custom_rules" in phases_in_results
+        assert "google.rate_rules" in phases_in_results
+        assert "google.preconfigured_rules" in phases_in_results
+        assert "google.redirect_rules" in phases_in_results
 
     @staticmethod
     def _regex_rule(ref):
@@ -154,8 +154,8 @@ class TestGoogleLint:
         """GA501 counts regex rules across all phases."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [self._regex_rule(str(i)) for i in range(6)],
-            "gcloud_armor_rate_rules": [self._regex_rule(str(i + 100)) for i in range(6)],
+            "google.custom_rules": [self._regex_rule(str(i)) for i in range(6)],
+            "google.rate_rules": [self._regex_rule(str(i + 100)) for i in range(6)],
         }
         google_lint(rules_data, ctx)
         rule_ids = [r.rule_id for r in ctx.results]
@@ -164,8 +164,8 @@ class TestGoogleLint:
     def test_ga501_not_triggered_under_limit(self):
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [self._regex_rule(str(i)) for i in range(5)],
-            "gcloud_armor_rate_rules": [self._regex_rule(str(i + 100)) for i in range(5)],
+            "google.custom_rules": [self._regex_rule(str(i)) for i in range(5)],
+            "google.rate_rules": [self._regex_rule(str(i + 100)) for i in range(5)],
         }
         google_lint(rules_data, ctx)
         rule_ids = [r.rule_id for r in ctx.results]
@@ -174,7 +174,7 @@ class TestGoogleLint:
     def test_severity_filter_applied(self):
         ctx = LintContext(severity_filter=Severity.ERROR)
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "100",
                     "action": "allow",

@@ -113,7 +113,7 @@ class TestGA328OverlyPermissiveRegex:
         """Empty regex matches everything."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -132,7 +132,7 @@ class TestGA328OverlyPermissiveRegex:
         """Single dot matches any character."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -150,7 +150,7 @@ class TestGA328OverlyPermissiveRegex:
         """.*  matches everything."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -168,7 +168,7 @@ class TestGA328OverlyPermissiveRegex:
         """^ and $ alone are permissive."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -186,7 +186,7 @@ class TestGA328OverlyPermissiveRegex:
         """Path context adds additional permissive patterns."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -204,7 +204,7 @@ class TestGA328OverlyPermissiveRegex:
         """Specific regex should not trigger GA328."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -226,7 +226,7 @@ class TestGA329AnchoredLiteralRegex:
         """Anchored literal like ^foo$ should use equality."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -246,7 +246,7 @@ class TestGA329AnchoredLiteralRegex:
         """Anchored literal with slashes like ^/api/v1$ ."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -264,7 +264,7 @@ class TestGA329AnchoredLiteralRegex:
         """Anchored literal with hyphens like ^user-id$."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -282,7 +282,7 @@ class TestGA329AnchoredLiteralRegex:
         """Unanchored regex should not trigger GA329."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -300,7 +300,7 @@ class TestGA329AnchoredLiteralRegex:
         """Regex with quantifier like ^foo.*$ should not trigger GA329."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -318,7 +318,7 @@ class TestGA329AnchoredLiteralRegex:
         """Regex with character class like ^[abc]$ should not trigger GA329."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -340,7 +340,7 @@ class TestGA529DeprecatedVersionedExpr:
         """versioned_expr field triggers warning."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -360,7 +360,7 @@ class TestGA529DeprecatedVersionedExpr:
         """CEL expr field should not trigger GA529."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -378,7 +378,7 @@ class TestGA529DeprecatedVersionedExpr:
         """Each rule with versioned_expr should get a warning."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -405,7 +405,7 @@ class TestGA027LeadingTrailingWhitespace:
         """Leading whitespace in expression triggers warning."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -424,7 +424,7 @@ class TestGA027LeadingTrailingWhitespace:
         """Trailing whitespace in expression triggers warning."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -442,7 +442,7 @@ class TestGA027LeadingTrailingWhitespace:
         """Both leading and trailing whitespace triggers single warning."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -460,7 +460,7 @@ class TestGA027LeadingTrailingWhitespace:
         """Expression without leading/trailing whitespace doesn't trigger."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -478,7 +478,7 @@ class TestGA027LeadingTrailingWhitespace:
         """Internal whitespace is fine, only leading/trailing matters."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -500,7 +500,7 @@ class TestGA526HeaderNameLowercase:
         """Uppercase header name triggers warning."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -521,7 +521,7 @@ class TestGA526HeaderNameLowercase:
         """Mixed case header name triggers warning."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -541,7 +541,7 @@ class TestGA526HeaderNameLowercase:
         """Lowercase header name doesn't trigger."""
         ctx = LintContext()
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -565,7 +565,7 @@ class TestGA526HeaderNameLowercase:
             'request.headers["Content-Type"].matches("json")'
         )
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",
@@ -584,7 +584,7 @@ class TestGA526HeaderNameLowercase:
         ctx = LintContext()
         expr = 'request.headers["X-Id"].matches("1") || request.headers["X-Id"].matches("2")'
         rules_data = {
-            "gcloud_armor_custom_rules": [
+            "google.custom_rules": [
                 {
                     "ref": "rule-1",
                     "action": "allow",

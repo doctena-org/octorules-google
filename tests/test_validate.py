@@ -36,8 +36,8 @@ class TestValidRules:
     def test_phase_passed_through(self):
         r = _rule()
         del r["ref"]
-        results = validate_rules([r], phase="gcloud_armor_custom_rules")
-        assert results[0].phase == "gcloud_armor_custom_rules"
+        results = validate_rules([r], phase="google.custom_rules")
+        assert results[0].phase == "google.custom_rules"
 
     def test_returns_lint_result_instances(self):
         r = _rule()
@@ -2752,10 +2752,8 @@ class TestGA502:
         from octorules_google.validate import validate_rule_count
 
         rules = [_rule(ref=str(i)) for i in range(257)]
-        results = validate_rule_count(
-            rules, plan_tier="standard", phase="gcloud_armor_custom_rules"
-        )
-        assert results[0].phase == "gcloud_armor_custom_rules"
+        results = validate_rule_count(rules, plan_tier="standard", phase="google.custom_rules")
+        assert results[0].phase == "google.custom_rules"
 
 
 # ---------------------------------------------------------------------------
@@ -2844,8 +2842,8 @@ class TestGA501:
         from octorules_google.validate import validate_regex_rule_count
 
         rules = [self._regex_rule(str(i)) for i in range(11)]
-        results = validate_regex_rule_count(rules, phase="gcloud_armor_custom_rules")
-        assert results[0].phase == "gcloud_armor_custom_rules"
+        results = validate_regex_rule_count(rules, phase="google.custom_rules")
+        assert results[0].phase == "google.custom_rules"
 
     def test_ga501_single_quoted_matches(self):
         """matches() with single-quoted pattern should count."""

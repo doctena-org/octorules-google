@@ -19,7 +19,7 @@ def lint_config(tmp_path):
 
     # Clean rules — public IPs only.
     (rules_dir / "clean-policy.yaml").write_text(
-        "gcloud_armor_custom_rules:\n"
+        "google:\n  custom_rules:\n"
         "  - ref: '1000'\n"
         "    description: Block public bad IP\n"
         "    action: deny(403)\n"
@@ -32,7 +32,7 @@ def lint_config(tmp_path):
 
     # Rules with multiple GA violations.
     (rules_dir / "bad-policy.yaml").write_text(
-        "gcloud_armor_custom_rules:\n"
+        "google:\n  custom_rules:\n"
         # GA503: reserved IP in src_ip_ranges.
         "  - ref: '1000'\n"
         "    description: Accidentally block RFC 1918\n"

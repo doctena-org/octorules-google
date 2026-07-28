@@ -16,7 +16,7 @@ from octorules.registration import idempotent_registration
 
 log = logging.getLogger(__name__)
 
-_EXT_KEY = "gcloud_armor_policy_settings"
+_EXT_KEY = "google.policy_settings"
 
 # The default rule is the rule at the maximum priority (managed by GCP).
 _DEFAULT_RULE_PRIORITY = 2147483647
@@ -283,7 +283,7 @@ class PolicySettingsFormatter(SettingsFormatter):
     Google Cloud Armor policy settings:
     - prefix: "policy_settings" (for labels like "policy_settings.field")
     - phase: "policy_settings"
-    - provider_id: "gcloud_armor_policy_settings"
+    - provider_id: "google.policy_settings"
     """
 
     def __init__(self) -> None:
@@ -300,7 +300,7 @@ class PolicySettingsFormatter(SettingsFormatter):
 class PolicySettingsExtension(ProviderExtension):
     """Cloud Armor policy-level settings."""
 
-    section = "gcloud_armor_policy_settings"
+    section = "google.policy_settings"
     formatter = PolicySettingsFormatter()
 
     def prefetch(self, desired, scope, provider):

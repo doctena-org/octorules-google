@@ -20,13 +20,13 @@ register_google_linter()
 # Register nested zone-file format namespace.
 # Maps nested keys under 'google:' block to canonical flat keys
 # (flat key = nested key prefixed with 'gcloud_armor_').
-_GOOGLE_NAMESPACE = {
-    "custom_rules": "gcloud_armor_custom_rules",
-    "rate_rules": "gcloud_armor_rate_rules",
-    "preconfigured_rules": "gcloud_armor_preconfigured_rules",
-    "redirect_rules": "gcloud_armor_redirect_rules",
-    "policy_settings": "gcloud_armor_policy_settings",
-}
+_GOOGLE_NAMESPACE: tuple[str, ...] = (
+    "custom_rules",
+    "rate_rules",
+    "preconfigured_rules",
+    "redirect_rules",
+    "policy_settings",
+)
 register_namespace("google", _GOOGLE_NAMESPACE)
 
 # Register audit IP extractor.
@@ -35,7 +35,7 @@ from octorules_google.audit import register_google_audit  # noqa: E402
 register_google_audit()
 
 # Register policy-level settings extension.
-register_non_phase_key("gcloud_armor_policy_settings")
+register_non_phase_key("google.policy_settings")
 from octorules_google._policy_settings import register_policy_settings  # noqa: E402
 
 register_policy_settings()
