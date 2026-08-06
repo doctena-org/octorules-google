@@ -1089,14 +1089,37 @@ def _check_cel_length(
     # Mask literal contents at identical length: a && inside a quoted value
     # must not split, but the characters still count toward GA321's measure.
     stripped = _CEL_STRING_LITERAL_RE.sub(lambda m: '"' + "x" * (len(m.group(0)) - 2) + '"', expr)
+
+    # Google states the 5-subexpression limit without defining how nesting is
+    # counted.  Counting only operators OUTSIDE parentheses gives the minimum
+    # over the plausible readings — an expression that exceeds 5 here exceeds
+    # 5 under any of them — which is what an ERROR needs to be safe.  The
+    # per-segment length check below deliberately splits the other way
+    # (every operator, any depth): a fine-grained segment over 1024 makes any
+    # coarser segment over 1024 too.
+    top_level = 1
+    depth = 0
+    i = 0
+    while i < len(stripped) - 1:
+        ch = stripped[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0 and stripped[i : i + 2] in ("&&", "||"):
+            top_level += 1
+            i += 2
+            continue
+        i += 1
+
     segments = _CEL_LOGICAL_OP_RE.split(stripped)
-    if len(segments) > _MAX_SUBEXPRESSIONS:
+    if top_level > _MAX_SUBEXPRESSIONS:
         results.append(
             _result(
                 rule_id="GA309",
                 severity=Severity.ERROR,
                 message=(
-                    f"Expression has {len(segments)} subexpressions"
+                    f"Expression joins {top_level} top-level subexpressions"
                     f" (Cloud Armor maximum: {_MAX_SUBEXPRESSIONS} per rule)"
                 ),
                 phase=phase,

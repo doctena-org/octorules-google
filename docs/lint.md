@@ -127,14 +127,14 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA424](#ga424--enforce_on_key_name-required-for-http_headerhttp_cookie) | enforce_on_key_name required for HTTP_HEADER/HTTP_COOKIE | ERROR |
 | [GA425](#ga425--ban_duration_sec-required-for-rate_based_ban) | ban_duration_sec required for rate_based_ban | ERROR |
 | [GA426](#ga426--invalid-ban_duration_sec-must-be-positive-integer) | Invalid ban_duration_sec (must be positive integer) | ERROR |
-| [GA427](#ga427--ban_duration_sec-exceeds-maximum-3600-seconds) | ban_duration_sec is not an accepted value | ERROR |
+| [GA427](#ga427--ban_duration_sec-is-not-an-accepted-value) | ban_duration_sec is not an accepted value | ERROR |
 | [GA428](#ga428--invalid-enforce_on_key_name-value) | Invalid enforce_on_key_name value | WARNING |
 | [GA429](#ga429--ban_duration_sec-is-only-valid-for-rate_based_ban) | ban_duration_sec is only valid for rate_based_ban | WARNING |
 | [GA431](#ga431--redirect-exceed_action-requires-exceed_redirect_options) | redirect exceed_action requires exceed_redirect_options | ERROR |
 | [GA432](#ga432--conflicting-rate-limit-options) | Conflicting rate-limit options | ERROR |
-| [GA500](#ga500--description-exceeds-1024-character-limit) | Description longer than 1024 chars (octorules guidance) | WARNING |
-| [GA501](#ga501--regex-rule-count-exceeds-standard-tier-limit) | More than 10 regex rules in a policy (octorules guidance) | WARNING |
-| [GA502](#ga502--rule-count-exceeds-tier-limit) | Rule count above tier guidance threshold (octorules) | WARNING |
+| [GA500](#ga500--description-longer-than-1024-chars-octorules-guidance) | Description longer than 1024 chars (octorules guidance) | WARNING |
+| [GA501](#ga501--more-than-10-regex-rules-in-a-policy-octorules-guidance) | More than 10 regex rules in a policy (octorules guidance) | WARNING |
+| [GA502](#ga502--rule-count-above-tier-guidance-threshold-octorules) | Rule count above tier guidance threshold (octorules) | WARNING |
 | [GA503](#ga503--privatereserved-ip-range-in-src_ip_ranges) | Private/reserved IP range in src_ip_ranges | WARNING |
 | [GA526](#ga526--http-header-name-should-be-lowercase) | HTTP header name should be lowercase in bracket access | INFO |
 | [GA600](#ga600--rule-is-in-preview-mode) | Rule is in preview mode (preview: true) | INFO |
@@ -2064,7 +2064,7 @@ Google publishes a discrete set, not a range: "The `ban_duration_sec` value must
       ban_duration_sec: 86400
 ```
 
-**Fix:** Use a value between 1 and 3600:
+**Fix:** Use one of the documented values:
 
 ```yaml
       ban_duration_sec: 3600
@@ -2189,7 +2189,7 @@ Detects impossible or meaningless combinations of rate-limit options:
 
 **Severity:** WARNING
 
-Cloud Armor rule descriptions have a 1,024-character limit. Descriptions exceeding this limit will be truncated or rejected by the API.
+The 1,024-character threshold is octorules guidance — Google publishes no rule description length (its Limits table's 1024 belongs to each *subexpression* of a custom expression, checked by GA321). Very long descriptions are unwieldy in consoles and diffs.
 
 **Triggers on:** A rule with a `description` field longer than 1,024 characters.
 
@@ -2248,15 +2248,15 @@ google:
 
 ---
 
-### GA501 -- Regex rule count exceeds standard tier limit
+### GA501 -- More than 10 regex rules in a policy (octorules guidance)
 
 **Severity:** WARNING
 
-Google Cloud Armor standard tier limits each security policy to **10 rules** that use `matches()` (regex) in their CEL expression. This check counts regex rules across all phases in the policy and warns when the limit is exceeded. The tier is auto-detected from the policy's DDoS and adaptive protection configuration (see [GA502](#ga502--rule-count-exceeds-tier-limit) for details); this rule only fires when the detected tier is `standard`.
+More than 10 rules in the policy use `matches()` (regex) in their CEL expression. The threshold is octorules guidance — Google publishes no regex-rule count per policy — and regex-heavy policies are worth reviewing for consolidation. Fires only when the detected tier is `standard` (see [GA502](#ga502--rule-count-above-tier-guidance-threshold-octorules) for tier detection).
 
 **Triggers on:** A standard-tier policy with more than 10 rules using `matches()`.
 
-**Fix:** Reduce the number of regex rules, combine patterns, or upgrade to Cloud Armor Plus/Enterprise which has higher limits.
+**Fix:** Nothing is required; consider combining patterns if the count was unintentional.
 
 ---
 
@@ -2264,19 +2264,19 @@ Google Cloud Armor standard tier limits each security policy to **10 rules** tha
 
 **Severity:** WARNING
 
-Cloud Armor has per-policy rule count limits that vary by tier:
+The thresholds are octorules guidance, per detected tier:
 
-| Tier | Limit |
-|------|-------|
+| Tier | Guidance threshold |
+|------|--------------------|
 | Standard | 256 |
 | Plus | 512 |
 | Enterprise | 1024 |
 
-This check compares the number of rules in a phase against the tier's limit. The tier is auto-detected from the policy's `ddos_protection_config` and `adaptive_protection_config.layer7_ddos_defense_config.rule_visibility` during zone resolution (`standard`, `plus`, or `enterprise`). When detection isn't possible (e.g., the policy lacks these fields), the tier falls back to `enterprise` (the most permissive).
+Google publishes no tier-based rules-per-policy model — its quotas are per-project and adjustable (the only published per-policy rule count, 100, belongs to *network edge* security policies, a different policy type). The tier is auto-detected from the policy's `ddos_protection_config` and `adaptive_protection_config.layer7_ddos_defense_config.rule_visibility` during zone resolution (`standard`, `plus`, or `enterprise`); when detection isn't possible the tier falls back to `enterprise` (the most permissive).
 
-**Triggers on:** A phase with more rules than the tier allows.
+**Triggers on:** A phase with more rules than the tier's guidance threshold.
 
-**Fix:** Reduce the number of rules, upgrade to a higher tier, or split rules across multiple policies.
+**Fix:** Nothing is required; check the project's actual `SECURITY_POLICY_RULES` quota if the policy is genuinely large.
 
 ---
 

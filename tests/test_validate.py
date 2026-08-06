@@ -4139,3 +4139,23 @@ class TestSubexpressionLimits:
         # keep total under GA304's 2048 while one segment nears the cap
         expr = f'request.path == "{pad[:990]}"'
         assert_no_lint(validate_rules([self._expr_rule(expr)]), "GA321")
+
+
+class TestSubexpressionCountingIsConservative:
+    """Google states the 5-subexpression limit without defining how nesting
+    counts. GA309 counts only depth-0 operators — the minimum over plausible
+    readings — so an ERROR is safe under any of them."""
+
+    def _probe(self, expression):
+        return validate_rules([_rule(match={"expr": {"expression": expression}})])
+
+    def test_nested_leaves_beyond_five_do_not_error(self):
+        """Six leaves in three parenthesized groups: only three top-level
+        operands, so under the coarse reading Google may accept it — an
+        ERROR here would be unsafe."""
+        expr = '(a == "A" || b == "B") && (c == "C" || d == "D") && (e == "E" || f == "F")'
+        assert_no_lint(self._probe(expr), "GA309")
+
+    def test_six_parenthesized_top_level_operands_error(self):
+        expr = " || ".join(f'(x{i} == "v" && y{i} == "w")' for i in range(6))
+        assert_lint(self._probe(expr), "GA309")
