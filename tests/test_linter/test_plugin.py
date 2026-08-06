@@ -21,8 +21,8 @@ class TestPluginRegistration:
     def test_rule_count(self):
         """Guard against silent rule add/remove (mirrors Azure/Bunny). Bump
         deliberately when intentionally adding or removing a rule."""
-        assert len(GA_RULE_METAS) == 87, (
-            f"Expected 87 GA rule metas, got {len(GA_RULE_METAS)}. "
+        assert len(GA_RULE_METAS) == 88, (
+            f"Expected 88 GA rule metas, got {len(GA_RULE_METAS)}. "
             "If you added or removed a rule, update this count intentionally."
         )
 

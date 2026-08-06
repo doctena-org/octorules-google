@@ -48,6 +48,8 @@ GA305 = RuleMeta("GA305", "match", "Overlapping or duplicate CIDRs", Severity.WA
 GA306 = RuleMeta("GA306", "match", "/0 CIDR matches all traffic", Severity.WARNING)
 GA307 = RuleMeta("GA307", "match", "CIDR has host bits set (will be normalized)", Severity.WARNING)
 GA308 = RuleMeta("GA308", "match", "src_ip_ranges exceeds the 10-range maximum", Severity.ERROR)
+GA309 = RuleMeta("GA309", "match", "Expression exceeds 5 subexpressions", Severity.ERROR)
+GA321 = RuleMeta("GA321", "match", "Subexpression exceeds 1024 characters", Severity.ERROR)
 
 # Category GA4xx — Rate-limit and redirect option checks
 GA400 = RuleMeta(
@@ -124,9 +126,6 @@ GA426 = RuleMeta(
 )
 GA427 = RuleMeta(
     "GA427", "rate_limit", "ban_duration_sec exceeds maximum (3600 seconds)", Severity.ERROR
-)
-GA430 = RuleMeta(
-    "GA430", "rate_limit", "ban_duration_sec very short (< 60 seconds)", Severity.WARNING
 )
 GA428 = RuleMeta(
     "GA428",
@@ -259,12 +258,20 @@ GA526 = RuleMeta(
 
 # Category GA5xx — Description & IP range checks & deprecated fields
 GA500 = RuleMeta(
-    "GA500", "description", "Description exceeds 1024 character limit", Severity.WARNING
+    "GA500",
+    "description",
+    "Description longer than 1024 chars (octorules guidance)",
+    Severity.WARNING,
 )
 GA501 = RuleMeta(
-    "GA501", "cross_rule", "Regex rule count exceeds standard tier limit (10)", Severity.WARNING
+    "GA501",
+    "cross_rule",
+    "More than 10 regex rules in a policy (octorules guidance)",
+    Severity.WARNING,
 )
-GA502 = RuleMeta("GA502", "cross_rule", "Rule count exceeds tier limit", Severity.WARNING)
+GA502 = RuleMeta(
+    "GA502", "cross_rule", "Rule count above tier guidance threshold (octorules)", Severity.WARNING
+)
 GA503 = RuleMeta("GA503", "match", "Private/reserved IP range in src_ip_ranges", Severity.WARNING)
 
 # Category GA6xx — Best-practice / operational checks

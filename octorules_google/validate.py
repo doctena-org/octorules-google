@@ -62,6 +62,8 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA306",
         "GA307",
         "GA308",
+        "GA309",
+        "GA321",
         "GA310",
         "GA311",
         "GA312",
@@ -107,7 +109,6 @@ RULE_IDS: frozenset[str] = frozenset(
         "GA427",
         "GA428",
         "GA429",
-        "GA430",
         "GA431",
         "GA432",
         "GA433",
@@ -173,8 +174,16 @@ _MAX_PRIORITY = 2_147_483_646
 # compute v1 discovery, SecurityPolicyRuleMatcherConfig.srcIpRanges:
 # "CIDR IP address range. Maximum number of src_ip_ranges allowed is 10."
 _MAX_SRC_IP_RANGES = 10
+# octorules guidance, not a Google limit — Cloud Armor publishes no rule
+# description length.  (Its Limits table does publish 1024, but for each
+# SUBEXPRESSION of a custom expression; that limit is GA321's.)
 _MAX_DESCRIPTION = 1024
 _MAX_EXPRESSION = 2048
+# Limits table: 5 subexpressions per rule, 1024 characters per subexpression.
+_MAX_SUBEXPRESSIONS = 5
+_MAX_SUBEXPRESSION_CHARS = 1024
+# octorules guidance, not a Google limit — Cloud Armor publishes no regex
+# length bound for matches().
 _MAX_REGEX_PATTERN_LEN = 512
 
 _KNOWN_WAF_RULE_SETS = frozenset(
@@ -281,7 +290,11 @@ _VALID_ENFORCE_ON_KEYS = frozenset(
     }
 )
 
-_MAX_BAN_DURATION = 3600
+# Rate-limiting overview: "The ban_duration_sec value must be 60, 120, 180,
+# 240, 300, 600, 900, 1200, 1800, 2700, or 3600 seconds."  A discrete set,
+# not a range; it also subsumes the old <60 warning (GA430), since those
+# values are invalid outright.
+_VALID_BAN_DURATIONS = frozenset({60, 120, 180, 240, 300, 600, 900, 1200, 1800, 2700, 3600})
 
 # RFC 7230 token characters for HTTP header names: tchar = "!" / "#" / "$" /
 # "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" /
@@ -1041,13 +1054,26 @@ def _ga305_overlap_check(
         )
 
 
+# Strips CEL string literals so a && or || INSIDE a quoted value is not
+# counted as a subexpression boundary.
+_CEL_STRING_LITERAL_RE = re.compile(r"\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'")
+_CEL_LOGICAL_OP_RE = re.compile(r"&&|\|\|")
+
+
 def _check_cel_length(
     expr: str,
     results: list[LintResult],
     phase: str,
     ref: str,
 ) -> None:
-    """GA304: CEL expression length check."""
+    """GA304/GA309/GA321: the three documented custom-expression sizes.
+
+    Cloud Armor's Limits table: "Number of characters in a custom
+    expression 2048" (GA304), "Number of subexpressions for each rule with
+    a custom expression 5" (GA309), "Number of characters for each
+    subexpression in a custom expression 1024" (GA321).  Subexpressions
+    are the operands the logical operators && and || join.
+    """
     if len(expr) > _MAX_EXPRESSION:
         results.append(
             _result(
@@ -1059,6 +1085,42 @@ def _check_cel_length(
                 field="match.expr.expression",
             )
         )
+
+    # Mask literal contents at identical length: a && inside a quoted value
+    # must not split, but the characters still count toward GA321's measure.
+    stripped = _CEL_STRING_LITERAL_RE.sub(lambda m: '"' + "x" * (len(m.group(0)) - 2) + '"', expr)
+    segments = _CEL_LOGICAL_OP_RE.split(stripped)
+    if len(segments) > _MAX_SUBEXPRESSIONS:
+        results.append(
+            _result(
+                rule_id="GA309",
+                severity=Severity.ERROR,
+                message=(
+                    f"Expression has {len(segments)} subexpressions"
+                    f" (Cloud Armor maximum: {_MAX_SUBEXPRESSIONS} per rule)"
+                ),
+                phase=phase,
+                ref=ref,
+                field="match.expr.expression",
+                suggestion="Split the expression across several rules",
+            )
+        )
+    for seg in segments:
+        if len(seg.strip()) > _MAX_SUBEXPRESSION_CHARS:
+            results.append(
+                _result(
+                    rule_id="GA321",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"A subexpression is {len(seg.strip())} characters"
+                        f" (Cloud Armor maximum: {_MAX_SUBEXPRESSION_CHARS})"
+                    ),
+                    phase=phase,
+                    ref=ref,
+                    field="match.expr.expression",
+                )
+            )
+            break
 
 
 def _check_cel(expr: str, results: list[LintResult], phase: str, ref: str) -> None:
@@ -1114,7 +1176,10 @@ def _check_description(
             _result(
                 rule_id="GA500",
                 severity=Severity.WARNING,
-                message=f"Description exceeds {_MAX_DESCRIPTION} characters ({len(desc)})",
+                message=(
+                    f"Description is {len(desc)} characters (octorules guidance"
+                    f" threshold: {_MAX_DESCRIPTION}; Google publishes no limit)"
+                ),
                 phase=phase,
                 ref=ref,
                 field="description",
@@ -1323,8 +1388,8 @@ def _check_cel_regex(
                     rule_id="GA413",
                     severity=Severity.WARNING,
                     message=(
-                        f"Regex pattern too long ({len(pattern)} chars,"
-                        f" max {_MAX_REGEX_PATTERN_LEN})"
+                        f"Regex pattern is {len(pattern)} chars (octorules guidance"
+                        f" threshold: {_MAX_REGEX_PATTERN_LEN}; Google publishes no limit)"
                     ),
                     phase=phase,
                     ref=ref,
@@ -1882,7 +1947,7 @@ def _check_ban_duration_sec(
     phase: str,
     ref: str,
 ) -> None:
-    """GA425/GA426/GA427/GA430 — ban_duration_sec validation for rate_based_ban."""
+    """GA425/GA426/GA427 — ban_duration_sec validation for rate_based_ban."""
     if action != "rate_based_ban":
         return
 
@@ -1912,28 +1977,16 @@ def _check_ban_duration_sec(
                 field="rate_limit_options.ban_duration_sec",
             )
         )
-    elif bds < 60:
-        results.append(
-            _result(
-                rule_id="GA430",
-                severity=Severity.WARNING,
-                message=(f"ban_duration_sec {bds} is very short (< 60 seconds may be ineffective)"),
-                phase=phase,
-                ref=ref,
-                field="rate_limit_options.ban_duration_sec",
-                suggestion="Consider a duration of 60 seconds or more",
-            )
-        )
-    elif bds > _MAX_BAN_DURATION:
+    elif bds not in _VALID_BAN_DURATIONS:
         results.append(
             _result(
                 rule_id="GA427",
                 severity=Severity.ERROR,
-                message=(f"ban_duration_sec {bds} exceeds maximum ({_MAX_BAN_DURATION} seconds)"),
+                message=f"ban_duration_sec {bds} is not an accepted value",
                 phase=phase,
                 ref=ref,
                 field="rate_limit_options.ban_duration_sec",
-                suggestion=f"Must be between 1 and {_MAX_BAN_DURATION}",
+                suggestion=f"Must be one of {sorted(_VALID_BAN_DURATIONS)}",
             )
         )
 

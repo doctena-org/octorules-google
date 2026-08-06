@@ -1,6 +1,6 @@
 # Lint Rule Reference
 
-`octorules lint` performs offline static analysis of your Cloud Armor rules files. **87 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
+`octorules lint` performs offline static analysis of your Cloud Armor rules files. **88 rules** with the **GA** prefix cover structure, priorities, actions, CEL expressions, CIDR validation, rate limiting, redirects, sub-structure validation, and cross-rule analysis.
 
 These rules are registered automatically when `octorules-google` is installed. They run alongside any core and other provider rules during `octorules lint`.
 
@@ -83,6 +83,8 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA306](#ga306--0-cidr-matches-all-traffic) | /0 CIDR matches all traffic | WARNING |
 | [GA307](#ga307--cidr-host-bits-normalization) | CIDR has host bits set (will be normalized) | WARNING |
 | [GA308](#ga308--src_ip_ranges-exceeds-the-10-range-maximum) | src_ip_ranges exceeds the 10-range maximum | ERROR |
+| [GA309](#ga309--expression-exceeds-5-subexpressions) | Expression exceeds 5 subexpressions | ERROR |
+| [GA321](#ga321--subexpression-exceeds-1024-characters) | Subexpression exceeds 1024 characters | ERROR |
 | [GA310](#ga310--unknown-field-reference-in-cel-expression) | Unknown field reference in CEL expression | WARNING |
 | [GA311](#ga311--unknown-function-in-cel-expression) | Unknown function in CEL expression | WARNING |
 | [GA312](#ga312--invalid-versioned_expr-value) | Invalid versioned_expr value | ERROR |
@@ -125,15 +127,14 @@ Suppressed findings are excluded from the report but counted in the summary line
 | [GA424](#ga424--enforce_on_key_name-required-for-http_headerhttp_cookie) | enforce_on_key_name required for HTTP_HEADER/HTTP_COOKIE | ERROR |
 | [GA425](#ga425--ban_duration_sec-required-for-rate_based_ban) | ban_duration_sec required for rate_based_ban | ERROR |
 | [GA426](#ga426--invalid-ban_duration_sec-must-be-positive-integer) | Invalid ban_duration_sec (must be positive integer) | ERROR |
-| [GA427](#ga427--ban_duration_sec-exceeds-maximum-3600-seconds) | ban_duration_sec exceeds maximum (3600 seconds) | ERROR |
-| [GA430](#ga430--ban_duration_sec-very-short) | ban_duration_sec very short (< 60 seconds) | WARNING |
+| [GA427](#ga427--ban_duration_sec-exceeds-maximum-3600-seconds) | ban_duration_sec is not an accepted value | ERROR |
 | [GA428](#ga428--invalid-enforce_on_key_name-value) | Invalid enforce_on_key_name value | WARNING |
 | [GA429](#ga429--ban_duration_sec-is-only-valid-for-rate_based_ban) | ban_duration_sec is only valid for rate_based_ban | WARNING |
 | [GA431](#ga431--redirect-exceed_action-requires-exceed_redirect_options) | redirect exceed_action requires exceed_redirect_options | ERROR |
 | [GA432](#ga432--conflicting-rate-limit-options) | Conflicting rate-limit options | ERROR |
-| [GA500](#ga500--description-exceeds-1024-character-limit) | Description exceeds 1024 character limit | WARNING |
-| [GA501](#ga501--regex-rule-count-exceeds-standard-tier-limit) | Regex rule count exceeds standard tier limit (10) | WARNING |
-| [GA502](#ga502--rule-count-exceeds-tier-limit) | Rule count exceeds tier limit | WARNING |
+| [GA500](#ga500--description-exceeds-1024-character-limit) | Description longer than 1024 chars (octorules guidance) | WARNING |
+| [GA501](#ga501--regex-rule-count-exceeds-standard-tier-limit) | More than 10 regex rules in a policy (octorules guidance) | WARNING |
+| [GA502](#ga502--rule-count-exceeds-tier-limit) | Rule count above tier guidance threshold (octorules) | WARNING |
 | [GA503](#ga503--privatereserved-ip-range-in-src_ip_ranges) | Private/reserved IP range in src_ip_ranges | WARNING |
 | [GA526](#ga526--http-header-name-should-be-lowercase) | HTTP header name should be lowercase in bracket access | INFO |
 | [GA600](#ga600--rule-is-in-preview-mode) | Rule is in preview mode (preview: true) | INFO |
@@ -946,6 +947,28 @@ google:
       expr:
         expression: "inIpRange(origin.ip, '192.0.2.0/24')"
 ```
+
+---
+
+### GA309 -- Expression exceeds 5 subexpressions
+
+**Severity:** ERROR
+
+Cloud Armor's Limits table: "Number of subexpressions for each rule with a custom expression 5". Subexpressions are the operands the logical operators `&&` and `||` join; operators inside quoted string values do not count.
+
+**Triggers on:** an `expr.expression` joining six or more conditions.
+
+**Fix:** Split the expression across several rules.
+
+---
+
+### GA321 -- Subexpression exceeds 1024 characters
+
+**Severity:** ERROR
+
+Cloud Armor's Limits table: "Number of characters for each subexpression in a custom expression 1024". The whole expression is separately capped at 2048 (GA304).
+
+**Fix:** Shorten the subexpression, or split the condition.
 ---
 
 ### GA310 -- Unknown field reference in CEL expression
@@ -2029,11 +2052,11 @@ The `ban_duration_sec` value must be a positive integer representing the ban dur
 
 ---
 
-### GA427 -- ban_duration_sec exceeds maximum (3600 seconds)
+### GA427 -- ban_duration_sec is not an accepted value
 
 **Severity:** ERROR
 
-The `ban_duration_sec` value must not exceed 3600 seconds (1 hour). Cloud Armor rejects values above this limit.
+Google publishes a discrete set, not a range: "The `ban_duration_sec` value must be 60, 120, 180, 240, 300, 600, 900, 1200, 1800, 2700, or 3600 seconds." Values between the documented ones (or below 60) are rejected by the API.
 
 **Triggers on:**
 
@@ -2162,7 +2185,7 @@ Detects impossible or meaningless combinations of rate-limit options:
 
 ## Best Practice (GA500--GA503)
 
-### GA500 -- Description exceeds 1024 character limit
+### GA500 -- Description longer than 1024 chars (octorules guidance)
 
 **Severity:** WARNING
 
@@ -2237,7 +2260,7 @@ Google Cloud Armor standard tier limits each security policy to **10 rules** tha
 
 ---
 
-### GA502 -- Rule count exceeds tier limit
+### GA502 -- Rule count above tier guidance threshold (octorules)
 
 **Severity:** WARNING
 
@@ -2344,14 +2367,6 @@ google:
 ```
 
 **Note:** A disabled rule is not an error. It's useful for preserving rules during development or temporary defeatures without deleting them.
-
-### GA430 -- ban_duration_sec very short
-
-**Severity:** WARNING
-
-`ban_duration_sec` is less than 60 seconds. Very short ban durations may be ineffective — by the time the ban takes effect the attacker has already completed their burst.
-
-**Fix:** Consider a duration of 60 seconds or more for meaningful rate-based bans.
 
 ### GA433 -- Redirect URL exceeds 1,024 characters
 

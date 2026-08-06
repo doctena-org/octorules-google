@@ -1291,20 +1291,23 @@ class TestRateLimitDeep:
         r = self._ban_rule(ban_duration_sec=86400)
         assert_lint(validate_rules([r]), "GA427")
 
-    # --- GA430: ban_duration_sec very short ---
+    # --- GA427 also covers the old GA430 territory: Google's set starts
+    # at 60, so a shorter duration is invalid, not merely "ineffective". ---
 
-    def test_ga430_very_short(self):
+    def test_ga427_very_short_is_invalid(self):
         r = self._ban_rule(ban_duration_sec=10)
-        assert_lint(validate_rules([r]), "GA430")
+        assert_lint(validate_rules([r]), "GA427")
 
-    def test_ga430_boundary_59(self):
-        """59 seconds is below the 60s threshold — should trigger."""
-        r = self._ban_rule(ban_duration_sec=59)
-        assert_lint(validate_rules([r]), "GA430")
+    def test_ga427_between_documented_values(self):
+        """100 sits inside the old 1-3600 range but not in Google's set:
+        "must be 60, 120, 180, 240, 300, 600, 900, 1200, 1800, 2700, or
+        3600 seconds." """
+        r = self._ban_rule(ban_duration_sec=100)
+        assert_lint(validate_rules([r]), "GA427")
 
-    def test_ga430_at_60_ok(self):
+    def test_ga427_at_60_ok(self):
         r = self._ban_rule(ban_duration_sec=60)
-        assert_no_lint(validate_rules([r]), "GA430")
+        assert_no_lint(validate_rules([r]), "GA427")
 
     def test_ga427_not_triggered_for_invalid_type(self):
         """GA426 fires for non-int, GA427 should not also fire."""
@@ -3099,7 +3102,7 @@ class TestGA413Length:
         results = validate_rules([_rule(match=match)])
         ga413 = [r for r in results if r.rule_id == "GA413"]
         assert len(ga413) == 1
-        assert "too long" in ga413[0].message
+        assert "octorules guidance" in ga413[0].message
         assert "600 chars" in ga413[0].message
 
     def test_ga413_pattern_at_limit_ok(self):
@@ -3118,7 +3121,7 @@ class TestGA413Length:
         results = validate_rules([_rule(match=match)])
         ga413 = [r for r in results if r.rule_id == "GA413"]
         assert len(ga413) == 1
-        assert "too long" in ga413[0].message
+        assert "octorules guidance" in ga413[0].message
 
 
 # ---------------------------------------------------------------------------
@@ -4093,3 +4096,46 @@ class TestExceedActionSpellings:
 
         out = _denormalize_rule({"ref": "100", "rate_limit_options": {"exceed_action": "deny-429"}})
         assert out["rate_limit_options"]["exceed_action"] == "deny(429)"
+
+
+class TestSubexpressionLimits:
+    """Cloud Armor Limits table: "Number of subexpressions for each rule
+    with a custom expression 5" (GA309) and "Number of characters for each
+    subexpression in a custom expression 1024" (GA321)."""
+
+    def _expr_rule(self, expression):
+        return _rule(match={"expr": {"expression": expression}})
+
+    def test_five_subexpressions_pass(self):
+        expr = " && ".join(f'request.path.matches("p{i}")' for i in range(5))
+        assert_no_lint(validate_rules([self._expr_rule(expr)]), "GA309")
+
+    def test_six_subexpressions_error(self):
+        expr = " && ".join(f'request.path.matches("p{i}")' for i in range(6))
+        assert_lint(validate_rules([self._expr_rule(expr)]), "GA309")
+
+    def test_mixed_operators_count_together(self):
+        expr = " || ".join(f'origin.region_code == "R{i}"' for i in range(3))
+        expr += ' && request.path.matches("a") && request.path.matches("b")'
+        expr += ' && request.path.matches("c")'
+        assert_lint(validate_rules([self._expr_rule(expr)]), "GA309")
+
+    def test_operators_inside_string_literals_do_not_count(self):
+        """a && inside a quoted value is data, not a subexpression boundary."""
+        expr = (
+            'request.query.contains("a&&b||c") && origin.ip == inIpRange(origin.ip, "192.0.2.0/24")'
+        )
+        assert_no_lint(validate_rules([self._expr_rule(expr)]), "GA309")
+
+    def test_long_subexpression_errors(self):
+        long_path = "a" * 1100
+        expr = f'request.path == "{long_path}"'
+        results = validate_rules([self._expr_rule(expr)])
+        assert_lint(results, "GA321")
+
+    def test_subexpression_at_1024_passes(self):
+        seg = 'request.path == "x"'
+        pad = "a" * (1024 - len(seg))
+        # keep total under GA304's 2048 while one segment nears the cap
+        expr = f'request.path == "{pad[:990]}"'
+        assert_no_lint(validate_rules([self._expr_rule(expr)]), "GA321")
