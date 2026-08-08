@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **GA308** (ERROR): more than 10 `src_ip_ranges` in a rule — Cloud Armor's
+  per-rule maximum.
+- **GA309** and **GA321** (ERROR): a custom expression joining more than 5
+  top-level subexpressions, or a subexpression over 1024 characters — both
+  Cloud Armor limits.
+
+### Changed
+- **GA427** validates `ban_duration_sec` against Cloud Armor's documented value
+  set (60–3600 in fixed steps) instead of only an upper bound. This covers
+  GA430's old below-60 warning, so GA430 is retired.
+- **GA500**, **GA501**, **GA502** and **GA413**'s thresholds are labelled
+  octorules guidance; Google publishes none of them.
+
+### Removed
+- **GA529**: it claimed `versioned_expr` is deprecated; Google's API definition
+  does not.
+
+### Fixed
+- `deny(429)` was accepted as a rule action and forwarded to the API, which
+  rejects it — 429 is valid only for a rate-limit `exceed_action`.
+- `exceed_action` accepted only the gcloud spelling (`deny-403`) and sent it
+  verbatim, so plans never converged; both spellings are accepted and the REST
+  form (`deny(403)`) goes to the API.
+
 ## [0.12.0] - 2026-07-26
 
 ### Added
