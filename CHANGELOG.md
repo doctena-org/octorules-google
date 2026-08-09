@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.13.0] - 2026-08-08
 
 ### Added
 - **GA308** (ERROR): more than 10 `src_ip_ranges` in a rule — Cloud Armor's
@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Cloud Armor limits.
 
 ### Changed
+- Minimum `octorules` dependency: `>=0.33.0`.
 - **GA427** validates `ban_duration_sec` against Cloud Armor's documented value
   set (60–3600 in fixed steps) instead of only an upper bound. This covers
   GA430's old below-60 warning, so GA430 is retired.
