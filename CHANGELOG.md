@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **GA328** and **GA329** skipped any `matches()` regex containing an escaped
+  quote — the pattern was never extracted, so the rules reported nothing.
+- **GA110**, **GA111**, **GA112** and **GA113** misread comparison operators,
+  parentheses and `&&`/`||` appearing inside quoted values, producing wrong
+  parses and, for GA110/GA111, broken suggestions.
+
 ## [0.13.0] - 2026-08-08
 
 ### Added

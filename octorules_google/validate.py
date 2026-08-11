@@ -22,11 +22,13 @@ from octorules.linter.helpers import (
 from octorules.reserved_ips import is_reserved
 
 from octorules_google.linter.cel_regex import (
+    STRING_LITERAL_RE,
     extract_regex_field_pairs,
     find_contradictory_and,
     find_negated_comparisons,
     find_or_chains_eq_same_field,
     has_mixed_and_or_at_depth_zero,
+    strip_string_literals,
 )
 
 # Rule IDs emitted by validate_rules() — kept in sync with _rules.py by
@@ -229,18 +231,6 @@ _KNOWN_FIELDS = frozenset(
 # Match dotted identifiers: word.word (with optional further .word segments).
 # Captures the first two segments (e.g. "origin.ip" from "origin.ip").
 _FIELD_RE = re.compile(r"\b([a-zA-Z_]\w*\.[a-zA-Z_]\w*)")
-
-# Match single- or double-quoted string literals (including escaped quotes).
-_STRING_LITERAL_RE = re.compile(r"""'[^'\\]*(?:\\.[^'\\]*)*'|"[^"\\]*(?:\\.[^"\\]*)*\"""")
-
-
-def _strip_string_literals(expr: str) -> str:
-    """Remove quoted string literals from a CEL expression.
-
-    Prevents false positives from field-like text inside strings, e.g.
-    ``request.headers["origin.ip"]`` should not flag ``origin.ip`` as a field.
-    """
-    return _STRING_LITERAL_RE.sub("", expr)
 
 
 _KNOWN_FUNCTIONS = frozenset(
@@ -1056,7 +1046,6 @@ def _ga305_overlap_check(
 
 # Strips CEL string literals so a && or || INSIDE a quoted value is not
 # counted as a subexpression boundary.
-_CEL_STRING_LITERAL_RE = re.compile(r"\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'")
 _CEL_LOGICAL_OP_RE = re.compile(r"&&|\|\|")
 
 
@@ -1088,7 +1077,7 @@ def _check_cel_length(
 
     # Mask literal contents at identical length: a && inside a quoted value
     # must not split, but the characters still count toward GA321's measure.
-    stripped = _CEL_STRING_LITERAL_RE.sub(lambda m: '"' + "x" * (len(m.group(0)) - 2) + '"', expr)
+    stripped = STRING_LITERAL_RE.sub(lambda m: '"' + "x" * (len(m.group(0)) - 2) + '"', expr)
 
     # Google states the 5-subexpression limit without defining how nesting is
     # counted.  Counting only operators OUTSIDE parentheses gives the minimum
@@ -1336,7 +1325,7 @@ def _check_cel_fields(
     ref: str,
 ) -> None:
     """GA310: unknown field references in CEL expression."""
-    stripped = _strip_string_literals(expr)
+    stripped = strip_string_literals(expr)
     seen: set[str] = set()
     for m in _FIELD_RE.finditer(stripped):
         field = m.group(1)
@@ -1375,7 +1364,7 @@ def _check_cel_functions(
     ref: str,
 ) -> None:
     """GA311: unknown function calls in CEL expression."""
-    stripped = _strip_string_literals(expr)
+    stripped = strip_string_literals(expr)
     seen: set[str] = set()
     for m in _FUNCTION_RE.finditer(stripped):
         func = m.group(1)

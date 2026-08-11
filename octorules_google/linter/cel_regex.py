@@ -13,6 +13,46 @@ Also provides general CEL expression scanning helpers for style and logic checks
 
 import re
 
+# A CEL string literal, escape-aware: a quote, any run of non-quote/non-backslash
+# characters interleaved with backslash escapes, then the closing quote.  The
+# naive ``"[^"]*"`` form stops at the first quote and so mis-parses ``"foo\"bar"``.
+STRING_LITERAL_RE = re.compile(r"\"[^\"\\]*(?:\\.[^\"\\]*)*\"|'[^'\\]*(?:\\.[^'\\]*)*'")
+
+# ``.matches("...")`` / ``.matches('...')`` with optional whitespace around the
+# dot, name and parens.  The pattern group is escape-aware for the same reason.
+# Module level so it is compiled once rather than on every call.
+_MATCHES_RE = re.compile(
+    r"""\s*\.\s*matches\s*\(\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*\)"""
+    r"""|\s*\.\s*matches\s*\(\s*'([^'\\]*(?:\\.[^'\\]*)*)'\s*\)"""
+)
+
+
+def strip_string_literals(expr: str) -> str:
+    """Remove quoted string literals from a CEL expression.
+
+    Prevents field-like or operator-like text inside a string from being read as
+    syntax, e.g. ``request.headers["origin.ip"]`` must not yield a field named
+    ``origin.ip``.
+    """
+    return STRING_LITERAL_RE.sub("", expr)
+
+
+def _blank_literal(match: re.Match[str]) -> str:
+    literal = match.group(0)
+    return literal[0] + " " * (len(literal) - 2) + literal[-1]
+
+
+def _mask_string_literals(expr: str) -> str:
+    """Blank the *contents* of every string literal, preserving total length.
+
+    The quotes stay; every character between them becomes a space.  Index *i* of
+    the result therefore always refers to index *i* of *expr*, so a scanner can
+    locate an operator or bracket in the mask and slice the original at the same
+    offset.  This is what :func:`strip_string_literals` cannot do — removing the
+    literals shifts every subsequent index.
+    """
+    return STRING_LITERAL_RE.sub(_blank_literal, expr)
+
 
 def extract_regex_field_pairs(expr: str) -> list[tuple[str, str]]:
     """Extract (receiver_path, regex_literal) pairs from CEL .matches() calls.
@@ -37,14 +77,7 @@ def extract_regex_field_pairs(expr: str) -> list[tuple[str, str]]:
     """
     pairs: list[tuple[str, str]] = []
 
-    # Regex to find .matches("...") or .matches('...') calls
-    # Captures the quoted pattern and ensures we're at a .matches( boundary
-    # Allow optional whitespace around the dot, function name, and parens
-    # The pattern handles: .matches(), . matches(), .  matches  (  ), etc.
-    # Use * (zero or more) instead of + (one or more) to allow empty patterns
-    matches_pattern = re.compile(r"""\s*\.\s*matches\s*\(\s*(?:"([^"]*)"|'([^']*)')\s*\)""")
-
-    for match in matches_pattern.finditer(expr):
+    for match in _MATCHES_RE.finditer(expr):
         # Get the matched pattern (group 1 or 2 depending on quote style)
         # Use explicit None check to handle empty string patterns
         pattern = match.group(1) if match.group(1) is not None else match.group(2)
@@ -320,23 +353,23 @@ def has_mixed_and_or_at_depth_zero(expr: str) -> bool:
     Returns:
         True if mixed && and || at depth zero are detected
     """
+    masked = _mask_string_literals(expr)
     depth = 0
     has_and = False
     has_or = False
     i = 0
-    while i < len(expr):
-        ch = expr[i]
+    while i < len(masked):
+        ch = masked[i]
         if ch == "(":
             depth += 1
         elif ch == ")":
             depth -= 1
         elif depth == 0:
-            if i + 1 < len(expr):
-                two_char = expr[i : i + 2]
-                if two_char == "&&":
-                    has_and = True
-                elif two_char == "||":
-                    has_or = True
+            two_char = masked[i : i + 2]
+            if two_char == "&&":
+                has_and = True
+            elif two_char == "||":
+                has_or = True
         i += 1
 
     return has_and and has_or
@@ -360,39 +393,37 @@ def _parse_single_comparison(expr: str) -> tuple[str, str, str] | None:
         Tuple of (operator, left_side, right_side) or None
     """
     expr = expr.strip()
+    # Scan the mask so that parens and operators inside string literals are not
+    # read as syntax; slice the original so the returned operands keep their
+    # literals intact (callers compare the right-hand values).
+    masked = _mask_string_literals(expr)
 
     # Quick check: if there are logical operators at depth zero, reject
     depth = 0
-    for i in range(len(expr)):
-        if expr[i] == "(":
+    for i in range(len(masked)):
+        if masked[i] == "(":
             depth += 1
-        elif expr[i] == ")":
+        elif masked[i] == ")":
             depth -= 1
-        elif depth == 0:
-            if i + 1 < len(expr):
-                two_char = expr[i : i + 2]
-                if two_char in ("&&", "||"):
-                    return None  # Has logical operators at depth zero
+        elif depth == 0 and masked[i : i + 2] in ("&&", "||"):
+            return None  # Has logical operators at depth zero
 
     # Try operators in order of specificity (longest first)
     for op in ["<=", ">=", "==", "!=", "<", ">"]:
-        parts = expr.split(op, 1)
-        if len(parts) == 2 and parts[0].strip() and parts[1].strip():
-            # Check that we're not splitting on a substring of a larger operator
-            # (e.g., splitting "<<" on "<")
-            idx = expr.find(op)
-            if idx > 0:
-                # Make sure the character before the op (if any) isn't part of another op
-                before = expr[idx - 1] if idx > 0 else ""
-                after = expr[idx + len(op)] if idx + len(op) < len(expr) else ""
-                # Reject if we'd be splitting something like "==" on a single "="
-                if op == "=" and (before == "=" or after == "="):
-                    continue
-                if op == "<" and (before == "<" or after == "<"):
-                    continue
-                if op == ">" and (before == ">" or after == ">"):
-                    continue
-            return (op, parts[0].strip(), parts[1].strip())
+        idx = masked.find(op)
+        if idx == -1:
+            continue
+        lhs, rhs = expr[:idx], expr[idx + len(op) :]
+        if not lhs.strip() or not rhs.strip():
+            continue
+        # Don't split a longer operator on one of its characters (e.g. "<<" on "<")
+        before = masked[idx - 1] if idx > 0 else ""
+        after = masked[idx + len(op)] if idx + len(op) < len(masked) else ""
+        if op == "<" and (before == "<" or after == "<"):
+            continue
+        if op == ">" and (before == ">" or after == ">"):
+            continue
+        return (op, lhs.strip(), rhs.strip())
     return None
 
 
@@ -406,18 +437,22 @@ def _split_at_operator(expr: str, op: str) -> list[str]:
     Returns:
         List of operands
     """
+    # Scan the mask, accumulate from the original: an operator or paren inside a
+    # string literal must not split the expression, but the operands that come
+    # back have to carry their literals verbatim.
+    masked = _mask_string_literals(expr)
     operands = []
     current = []
     depth = 0
     i = 0
     while i < len(expr):
-        if expr[i] == "(":
+        if masked[i] == "(":
             depth += 1
             current.append(expr[i])
-        elif expr[i] == ")":
+        elif masked[i] == ")":
             depth -= 1
             current.append(expr[i])
-        elif depth == 0 and i + len(op) <= len(expr) and expr[i : i + len(op)] == op:
+        elif depth == 0 and i + len(op) <= len(expr) and masked[i : i + len(op)] == op:
             operands.append("".join(current))
             current = []
             i += len(op) - 1
@@ -425,7 +460,7 @@ def _split_at_operator(expr: str, op: str) -> list[str]:
             current.append(expr[i])
         i += 1
     operands.append("".join(current))
-    return [op.strip() for op in operands if op.strip()]
+    return [operand.strip() for operand in operands if operand.strip()]
 
 
 def _is_simple_field_ref(text: str) -> bool:
