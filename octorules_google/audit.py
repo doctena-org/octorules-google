@@ -1,8 +1,7 @@
 """Google Cloud Armor audit extension — extracts IP ranges from rules."""
 
-from octorules.audit import RuleIPInfo
+from octorules.audit import RuleIPInfo, iter_audit_rules
 from octorules.extensions import register_audit_extension
-from octorules.phases import PHASE_BY_NAME
 
 from octorules_google import GCLOUD_PHASE_NAMES
 from octorules_google.validate import _IN_IP_RANGE_RE
@@ -10,19 +9,9 @@ from octorules_google.validate import _IN_IP_RANGE_RE
 
 def _extract_ips(rules_data: dict, phase_name: str) -> list[RuleIPInfo]:
     """Extract IP ranges from Google Cloud Armor rules in *phase_name*."""
-    if phase_name not in GCLOUD_PHASE_NAMES:
-        return []
-    if phase_name not in PHASE_BY_NAME:
-        return []
-
-    rules = rules_data.get(phase_name)
-    if not isinstance(rules, list):
-        return []
 
     results: list[RuleIPInfo] = []
-    for rule in rules:
-        if not isinstance(rule, dict):
-            continue
+    for rule in iter_audit_rules(rules_data, phase_name, GCLOUD_PHASE_NAMES):
         ref = str(rule.get("ref", ""))
         action = str(rule.get("action", ""))
 
