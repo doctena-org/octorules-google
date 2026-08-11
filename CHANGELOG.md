@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Minimum `octorules` dependency: `>=0.35.0` (for `iter_audit_rules`).
+
 ### Fixed
 - **GA328** and **GA329** skipped any `matches()` regex containing an escaped
   quote — the pattern was never extracted, so the rules reported nothing.
