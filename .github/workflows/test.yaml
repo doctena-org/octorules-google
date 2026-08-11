@@ -28,7 +28,7 @@ jobs:
           persist-credentials: false
       - id: load
         env:
-          CI_CONFIG_REF: v0.33.0
+          CI_CONFIG_REF: ci-config/v1
         run: |
           url="https://raw.githubusercontent.com/doctena-org/octorules/${CI_CONFIG_REF}/.ci-config.json"
           if curl -fsSL --retry 3 --retry-all-errors --max-time 20 -o fetched.json "$url" \
