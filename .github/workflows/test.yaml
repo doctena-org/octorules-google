@@ -51,6 +51,10 @@ jobs:
     strategy:
       matrix:
         python-version: ${{ fromJson(needs.config.outputs.json).python_versions_active }}
+        # ponytail: no 3.15 leg while google-re2 (required by cel-python) has no
+        # cp315 wheel; drop this and add the 3.15 classifier once google/re2#647 ships one.
+        exclude:
+          - python-version: "3.15"
     steps:
       - uses: actions/checkout@v7
         with:
