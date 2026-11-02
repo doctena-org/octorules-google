@@ -7,7 +7,7 @@ name = "octorules-google"
 version = "0.13.1"
 description = "Google Cloud Armor provider for octorules"
 license = "Apache-2.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 authors = [
     { name = "Martin Simon" },
@@ -19,7 +19,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -52,7 +51,7 @@ google = "octorules_google:CloudArmorProvider"
 include = ["octorules_google*"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
@@ -66,8 +65,7 @@ select = ["E", "F", "I", "W", "UP", "B", "RUF"]
 testpaths = ["tests"]
 filterwarnings = [
     "error",
-    # google.api_core warns at import time on Python 3.10 (supported here per
-    # the version policy until its 2026-10 EOL); an upstream advisory about
-    # the interpreter is not a defect in this package.
-    "ignore:You are using a Python version:FutureWarning",
+    # google.api_core warns at import time on interpreters near or past end of
+    # life; an upstream advisory about the interpreter is not a defect here.
+    "ignore:You are using a (non-supported )?Python version:FutureWarning",
 ]
